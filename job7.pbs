@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# =========================================================
+# PBS JOB CONFIGURATION
+# =========================================================
+
+#PBS -N NYS_PySAM_Optimization
+#PBS -q large
+#PBS -l select=7:ncpus=112:mpiprocs=1
+#PBS -l place=scatter
+#PBS -l walltime=12:00:00
+#PBS -j oe
+#PBS -M 23b0343@iitb.ac.in
+#PBS -m abe
+
+
+# =========================================================
+# MOVE TO PROJECT DIRECTORY
+# =========================================================
+
+cd "$PBS_O_WORKDIR" || exit 1
+
+echo "================================================="
+echo "NYS PySAM Seasonal Optimisation"
+echo "================================================="
+echo "Job ID       : $PBS_JOBID"
+echo "Job Name     : $PBS_JOBNAME"
+echo "Working Dir  : $PBS_O_WORKDIR"
+echo "Nodes        : $PBS_NODEFILE"
+echo "Total CPUs   : $PBS_NCPUS"
+echo "Season       : $SEASON"
+echo "================================================="
+
+
+# =========================================================
+# CHECK SEASON
+# =========================================================
+
+if [ -z "$SEASON" ]; then
+    echo "ERROR: SEASON was not specified."
+    echo "Submit using:"
+    echo "    qsub -v SEASON=winter season.pbs"
+    exit 1
+fi
+
+
+case "$SEASON" in
+    winter|summer|monsoon|post)
+        ;;
+    *)
+        echo "ERROR: Invalid season: $SEASON"
+        echo "Allowed: winter, summer, monsoon, post"
+        exit 1
+        ;;
+esac
+
+
+# =========================================================
+# DAgshub / MLflow AUTHENTICATION
+# =========================================================
+
+if [ -f "$HOME/.dagshub_token" ]; then
+
+    export MLFLOW_TRACKING_USERNAME="aryanvj787"
+
+    export MLFLOW_TRACKING_PASSWORD="$(
+        cat "$HOME/.dagshub_token"
+    )"
+
+    export MLFLOW_TRACKING_URI="https://dagshub.com/aryanvj787/NYS-Design-Optimisation-using-PySAM.mlflow"
+
+    echo "MLflow/DagsHub authentication configured."
+
+else
+
+    echo "WARNING: $HOME/.dagshub_token not found."
+    echo "MLflow logging may fail."
+
+fi
+
+
+# =========================================================
+# PYTHON ENVIRONMENT
+# =========================================================
+
+# spack is NOT required here if your environment is
+# already configured for Python/mpi4py.
+
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+else
+    echo "ERROR: .venv not found."
+    exit 1
+fi
+
+
+# =========================================================
+# PARALLELISM CONTROL
+# =========================================================
+
+# PBS allocates:
+#
+#   7 nodes × 112 CPUs = 784 CPUs
+#
+export APP_CPU_COUNT="$PBS_NCPUS"
+
+# Prevent NumPy / MKL / BLAS from creating additional
+# threads inside each multiprocessing worker.
+
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+
+# =========================================================
+# DISPLAY ALLOCATION
+# =========================================================
+
+echo ""
+echo "Allocated nodes:"
+sort -u "$PBS_NODEFILE"
+
+echo ""
+echo "MPI ranks:"
+echo "7"
+
+echo ""
+echo "CPUs per MPI rank:"
+echo "112"
+
+echo ""
+echo "Total CPUs:"
+echo "$APP_CPU_COUNT"
+
+echo ""
+echo "Season:"
+echo "$SEASON"
+
+echo ""
+echo "================================================="
+echo "Starting MPI optimisation..."
+echo "================================================="
+
+
+# =========================================================
+# RUN
+# =========================================================
+
+mpirun -np 7 \
+    uv run python main.py \
+    --season "$SEASON"
+
+
+EXIT_CODE=$?
+
+
+# =========================================================
+# FINISH
+# =========================================================
+
+echo ""
+echo "================================================="
+echo "Optimisation finished"
+echo "Exit code: $EXIT_CODE"
+echo "Season: $SEASON"
+echo "================================================="
+
+exit "$EXIT_CODE"

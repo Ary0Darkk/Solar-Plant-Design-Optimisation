@@ -1,0 +1,16 @@
+# env variables
+.venv
+
+# cache
+__pycache__
+simulation/__pycache__
+
+# ruff-linter cache
+.ruff_cache
+
+# local cache folders
+checkpoints
+results
+logs
+sim_cache
+plots
