@@ -104,6 +104,9 @@ fi
 #
 export APP_CPU_COUNT="$PBS_NCPUS"
 
+# One multiprocessing pool per MPI rank.
+export LOCAL_WORKERS=112
+
 # Prevent NumPy / MKL / BLAS from creating additional
 # threads inside each multiprocessing worker.
 

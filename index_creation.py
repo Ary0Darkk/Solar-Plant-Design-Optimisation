@@ -50,5 +50,11 @@ def get_season_days(season):
     ]
 
 
-# season_dates = get_season_days("winter")
-# print(season_dates)
+if __name__ == "__main__":
+    for season_name in CONFIG["SEASONS"]:
+        print(f"\n--- {season_name.upper()} SEASON DAYS ---")
+        for d in get_season_days(season_name):
+            print(
+                f"  Day {d['local_index'] + 1}: Month {d['month']:02d}, "
+                f"Day {d['day']:02d} -> Year Day Index {d['day_index']}"
+            )

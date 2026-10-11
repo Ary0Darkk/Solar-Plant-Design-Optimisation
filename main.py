@@ -1,11 +1,48 @@
+import sys
 import os
 import argparse
 import multiprocessing as mp
 import json
+from datetime import datetime
+
+# Ensure Windows consoles encode UTF-8 (prevent MLflow emoji crashes)
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
 
 import mlflow
 import dagshub
-from mpi4py import MPI
+
+try:
+    from mpi4py import MPI
+except Exception:
+    MPI = None
+
+
+# ---------------------------------------------------------
+# Standalone communicator fallback
+# ---------------------------------------------------------
+
+
+class StandaloneComm:
+    """Mock MPI communicator for running without MPI in single-node environments."""
+
+    def Get_rank(self) -> int:
+        return 0
+
+    def Get_size(self) -> int:
+        return 1
+
+    def bcast(self, data, root: int = 0):
+        return data
+
+    def send(self, data, dest: int, tag: int = 0) -> None:
+        pass
+
+    def recv(self, source: int = 0, tag: int = 0):
+        return None
 
 
 from setup_custom_logger import setup_custom_logger
@@ -25,9 +62,23 @@ def parse_args():
 
     parser.add_argument(
         "--season",
-        required=True,
+        default="summer",
         choices=["winter", "summer", "monsoon", "post"],
-        help="Seasonal optimisation case to run",
+        help="Seasonal optimisation case to run (default: summer)",
+    )
+
+    parser.add_argument(
+        "--generations",
+        type=int,
+        default=None,
+        help="Optional override for number of generations",
+    )
+
+    parser.add_argument(
+        "--pop-size",
+        type=int,
+        default=None,
+        help="Optional override for population size",
     )
 
     return parser.parse_args()
@@ -74,19 +125,38 @@ def main():
     args = parse_args()
     season = args.season
 
+    if args.generations is not None:
+        CONFIG["num_generations"] = args.generations
+    if args.pop_size is not None:
+        CONFIG["pop_size"] = args.pop_size
+        if CONFIG.get("tournament_size", 7) > args.pop_size:
+            CONFIG["tournament_size"] = max(2, args.pop_size // 2)
+        if CONFIG.get("hall_of_fame_size", 5) > args.pop_size:
+            CONFIG["hall_of_fame_size"] = max(1, args.pop_size // 2)
+
     # ---------------------------------------------------------
-    # MPI
+    # MPI / Standalone Communicator
     # ---------------------------------------------------------
 
-    comm = MPI.COMM_WORLD
+    if MPI is not None:
+        comm = MPI.COMM_WORLD
+    else:
+        comm = StandaloneComm()
+
     rank = comm.Get_rank()
     size = comm.Get_size()
 
     # ---------------------------------------------------------
-    # Race-safe Logger
+    # Synchronized Rank Logger
     # ---------------------------------------------------------
 
-    logger = setup_custom_logger(rank=rank)
+    # Synchronize run timestamp from Rank 0 to ensure matching log sessions
+    session_timestamp = (
+        datetime.now().strftime("%Y-%m-%d_%H-%M-%S") if rank == 0 else None
+    )
+    session_timestamp = comm.bcast(session_timestamp, root=0)
+
+    logger = setup_custom_logger(rank=rank, timestamp=session_timestamp)
     logger.info("NYS-Optimisation started!")
 
     logger.info(f"[Rank {rank}] Starting optimisation for season: {season}")
@@ -97,14 +167,20 @@ def main():
 
     if rank == 0:
         # -----------------------------------------------------
-        # MLflow configuration
+        # MLflow / DagsHub configuration
         # -----------------------------------------------------
 
-        dagshub.init(
-            repo_owner="aryanvj787",
-            repo_name="NYS-Design-Optimisation-using-PySAM",
-            mlflow=True,
-        )
+        try:
+            dagshub.init(
+                repo_owner="aryanvj787",
+                repo_name="NYS-Design-Optimisation-using-PySAM",
+                mlflow=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not initialize DagsHub (%s). Falling back to local MLflow.",
+                exc,
+            )
 
         mlflow.set_experiment("CSP_Seasonal_GA")
 
@@ -136,25 +212,27 @@ def main():
             # -------------------------------------------------
 
             num_workers = int(os.environ.get("LOCAL_WORKERS", "4"))
-            local_pool = mp.Pool(processes=num_workers)
+            mp_context = mp.get_context()
 
             try:
-                run_deap_ga_optimisation(
-                    season=season,
-                    local_pool=local_pool,
-                    comm=comm,
-                    rank=rank,
-                    mpi_size=size,
-                    logger=logger,
-                )
+                # Periodic recycling (maxtasksperchild) releases PySAM C-memory
+                with mp_context.Pool(
+                    processes=num_workers,
+                    maxtasksperchild=100,
+                ) as local_pool:
+                    run_deap_ga_optimisation(
+                        season=season,
+                        local_pool=local_pool,
+                        comm=comm,
+                        rank=rank,
+                        mpi_size=size,
+                        logger=logger,
+                    )
 
             finally:
                 # Tell remote MPI ranks to stop
                 for worker in range(1, size):
                     comm.send(None, dest=worker, tag=1)
-
-                local_pool.close()
-                local_pool.join()
 
             logger.info("[Rank 0] MLflow run completed")
 
@@ -163,7 +241,7 @@ def main():
     # =========================================================
 
     else:
-        worker_loop(season=season, comm=comm, rank=rank)
+        worker_loop(season=season, comm=comm, rank=rank, logger=logger)
 
     logger.info("Optimisation Completed!")
 

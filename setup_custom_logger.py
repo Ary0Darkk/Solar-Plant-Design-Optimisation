@@ -21,6 +21,7 @@ def setup_custom_logger(
     log_folder="logs",
     existing_file=None,
     rank=0,
+    timestamp=None,
 ):
     """
     Log to the console and a timestamped, MPI-rank-specific file.
@@ -35,24 +36,29 @@ def setup_custom_logger(
         Optional explicit log file path.
     rank : int
         MPI rank, obtained from MPI.COMM_WORLD.Get_rank().
+    timestamp : str or None
+        Optional shared timestamp across all ranks.
     """
 
     # Race-safe directory creation
     os.makedirs(log_folder, exist_ok=True)
 
-    # Create a distinct logger for each MPI rank
-    logger_name = f"{name}.rank{rank}"
-    logger = logging.getLogger(logger_name)
+    # Configure logger for this rank process
+    logger = logging.getLogger(name)
 
     logger.setLevel(logging.INFO)
     logger.propagate = False
+
+    # Filter out any placeholder NullHandlers attached during module imports
+    logger.handlers = [h for h in logger.handlers if not isinstance(h, logging.NullHandler)]
 
     # Avoid duplicate handlers if this logger is initialized again
     if logger.handlers:
         return logger
 
-    # Generate a timestamped, rank-specific filename
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # Generate or use synchronized rank-specific filename
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     if existing_file:
         log_file = existing_file

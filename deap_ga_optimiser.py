@@ -148,101 +148,103 @@ def worker_loop(season, comm, rank, logger):
     if num_workers < 1:
         raise ValueError(f"LOCAL_WORKERS must be >= 1, got {num_workers}")
 
-    pool = None
+    mp_context = mp.get_context()
     pool_failed = False
 
     try:
-        pool = mp.Pool(processes=num_workers)
-
-        logger.info(
-            "Multiprocessing pool started | MPI rank: %s | Workers: %s",
-            rank,
-            num_workers,
-        )
-
-        while True:
-            # Wait for a batch or shutdown signal from rank 0.
-            batch = comm.recv(source=0, tag=1)
-
-            if batch is None:
-                logger.info(
-                    "Received shutdown signal | MPI rank: %s",
-                    rank,
-                )
-                break
-
+        with mp_context.Pool(
+            processes=num_workers,
+            maxtasksperchild=100,
+        ) as pool:
             logger.info(
-                "Received batch | MPI rank: %s | Individuals: %d",
+                "Multiprocessing pool started | MPI rank: %s | Workers: %s",
                 rank,
-                len(batch),
+                num_workers,
             )
 
-            try:
-                batch_result = evaluate_batch(
-                    batch=batch,
-                    pool=pool,
-                    season=season,
-                    rank=rank,
-                    logger=logger,
-                )
+            while True:
+                # Wait for a batch or shutdown signal from rank 0.
+                batch = comm.recv(source=0, tag=1)
 
-                # Validate the result before reporting success.
-                if not isinstance(batch_result, dict):
-                    raise TypeError("evaluate_batch() must return a dictionary")
-
-                required_keys = {
-                    "fitnesses",
-                    "successful",
-                    "penalized",
-                }
-
-                missing_keys = required_keys - batch_result.keys()
-
-                if missing_keys:
-                    raise KeyError(
-                        f"evaluate_batch() result missing keys: {sorted(missing_keys)}"
+                if batch is None:
+                    logger.info(
+                        "Received shutdown signal | MPI rank: %s",
+                        rank,
                     )
-
-                response = {
-                    "ok": True,
-                    "result": batch_result,
-                    "error": None,
-                }
+                    break
 
                 logger.info(
-                    "Batch evaluated successfully | MPI rank: %s | "
-                    "Individuals: %d | Successful simulations: %s | "
-                    "Penalized simulations: %s",
+                    "Received batch | MPI rank: %s | Individuals: %d",
                     rank,
                     len(batch),
-                    batch_result["successful"],
-                    batch_result["penalized"],
                 )
 
-            except Exception as exc:
-                pool_failed = True
+                try:
+                    batch_result = evaluate_batch(
+                        batch=batch,
+                        pool=pool,
+                        season=season,
+                        rank=rank,
+                        logger=logger,
+                    )
 
-                logger.exception(
-                    "Batch evaluation failed | MPI rank: %s",
-                    rank,
-                )
+                    # Validate the result before reporting success.
+                    if not isinstance(batch_result, dict):
+                        raise TypeError("evaluate_batch() must return a dictionary")
 
-                response = {
-                    "ok": False,
-                    "result": None,
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
+                    required_keys = {
+                        "fitnesses",
+                        "successful",
+                        "penalized",
+                    }
 
-            # Reply to rank 0 for every batch received, including failures.
-            comm.send(response, dest=0, tag=2)
+                    missing_keys = required_keys - batch_result.keys()
 
-            # Do not keep using a potentially unhealthy pool after failure.
-            if pool_failed:
-                logger.error(
-                    "Stopping worker after batch failure | MPI rank: %s",
-                    rank,
-                )
-                break
+                    if missing_keys:
+                        raise KeyError(
+                            f"evaluate_batch() result missing keys: {sorted(missing_keys)}"
+                        )
+
+                    response = {
+                        "ok": True,
+                        "result": batch_result,
+                        "error": None,
+                    }
+
+                    logger.info(
+                        "Batch evaluated successfully | MPI rank: %s | "
+                        "Individuals: %d | Successful simulations: %s | "
+                        "Penalized simulations: %s",
+                        rank,
+                        len(batch),
+                        batch_result["successful"],
+                        batch_result["penalized"],
+                    )
+
+                except Exception as exc:
+                    pool_failed = True
+
+                    logger.exception(
+                        "Batch evaluation failed | MPI rank: %s",
+                        rank,
+                    )
+
+                    response = {
+                        "ok": False,
+                        "result": None,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+
+                # Reply to rank 0 for every batch received, including failures.
+                comm.send(response, dest=0, tag=2)
+
+                # Do not keep using a potentially unhealthy pool after failure.
+                if pool_failed:
+                    logger.error(
+                        "Stopping worker after batch failure | MPI rank: %s",
+                        rank,
+                    )
+                    break
 
     except Exception:
         logger.exception(
@@ -252,22 +254,6 @@ def worker_loop(season, comm, rank, logger):
         raise
 
     finally:
-        if pool is not None:
-            if pool_failed:
-                logger.warning(
-                    "Terminating multiprocessing pool | MPI rank: %s",
-                    rank,
-                )
-                pool.terminate()
-            else:
-                logger.info(
-                    "Closing multiprocessing pool | MPI rank: %s",
-                    rank,
-                )
-                pool.close()
-
-            pool.join()
-
         logger.info(
             "Worker stopped | MPI rank: %s",
             rank,
@@ -538,7 +524,7 @@ def run_one_simulation(
     # Run PySAM
     # -------------------------------------------------
 
-    sim_result, penalty_flag = run_simulation(overrides)
+    sim_result, penalty_flag = run_simulation(overrides, day_index=day_index)
 
     # -------------------------------------------------
     # Penalty
@@ -560,13 +546,13 @@ def run_one_simulation(
     # -------------------------------------------------
 
     objective = objective_function(
-        sim_result["hourly_energy"],
-        sim_result["pc_htf_pump_power"],
-        sim_result["field_htf_pump_power"],
-        sim_result["field_collector_tracking_power"],
-        sim_result["pc_startup_thermal_power"],
-        sim_result["field_piping_thermal_loss"],
-        sim_result["receiver_thermal_loss"],
+        hourly_energy=sim_result["hourly_energy"],
+        field_htf_pump_power=sim_result["field_htf_pump_power"],
+        pc_htf_pump_power=sim_result["pc_htf_pump_power"],
+        field_collector_tracking_power=sim_result["field_collector_tracking_power"],
+        pc_startup_thermal_power=sim_result["pc_startup_thermal_power"],
+        field_piping_thermal_loss=sim_result["field_piping_thermal_loss"],
+        receiver_thermal_loss=sim_result["receiver_thermal_loss"],
         day_index=day_index,
     )
 
@@ -729,7 +715,7 @@ def run_deap_ga_optimisation(
         tools.selTournament,
         tournsize=CONFIG.get("tournament_size"),
     )
-    toolbox.register("mate", tools.cxOnePoint)
+    toolbox.register("mate", tools.cxTwoPoint)
 
     def custom_mutation(individual):
         """
@@ -840,7 +826,7 @@ def run_deap_ga_optimisation(
                 logbook = cp["logbook"]
 
                 hof = tools.HallOfFame(maxsize=CONFIG.get("hall_of_fame_size"))
-                hof[:] = deserialize_population(cp["hof"], toolbox)
+                hof.update(deserialize_population(cp["hof"], toolbox))
 
                 start_gen = cp["generation"] + 1
 
@@ -853,8 +839,7 @@ def run_deap_ga_optimisation(
             pop, logbook, hof, start_gen = init_fresh_ga(toolbox, pop_size, logger)
 
     else:
-        # This else belongs to the try/except, not the resume condition.
-        pass
+        pop, logbook, hof, start_gen = init_fresh_ga(toolbox, pop_size, logger)
 
     stats = tools.Statistics(
         lambda ind: ind.fitness.values[0]
@@ -915,7 +900,10 @@ def run_deap_ga_optimisation(
         run_successful_total += evaluation_stats["successful"]
         run_penalized_total += evaluation_stats["penalized"]
 
-        pop = toolbox.select(offspring, k=pop_size)
+        # True elitism: select pop_size - len(hof) from offspring, preserve Hall of Fame
+        hof_size = len(hof)
+        pop = toolbox.select(offspring, k=pop_size - hof_size)
+        pop.extend([toolbox.clone(ind) for ind in hof])
         hof.update(pop)
 
         record = stats.compile(pop)
@@ -941,7 +929,7 @@ def run_deap_ga_optimisation(
         max_fitness_log.append(record["max"])
         avg_fitness_log.append(record["avg"])
 
-        if gen % 1 == 0 or gen == num_generations - 1:
+        if gen % CONFIG.get("checkpoint_interval", 5) == 0 or gen == num_generations - 1:
             fig, ax = plt.subplots(figsize=(10, 6))
 
             ax.plot(gens_log, max_fitness_log, "r-", label="Max Fitness", lw=2)
@@ -1052,8 +1040,17 @@ def run_deap_ga_optimisation(
         "best_fitness": best_fitness,
     }
 
-    for i, name in enumerate(design_var + operational_var):
-        res_dict[name] = best_ind[i]
+    for i, name in enumerate(design_var):
+        res_dict[f"design_{name}"] = best_ind[i]
+
+    num_operational_vars = len(operational_var)
+    for day_idx, day_info in enumerate(season_days):
+        day_label = (
+            f"day_{day_idx + 1:02d}_{day_info['month']:02d}_{day_info['day']:02d}"
+        )
+        for op_idx, name in enumerate(operational_var):
+            gene_idx = len(design_var) + day_idx * num_operational_vars + op_idx
+            res_dict[f"{day_label}_{name}"] = best_ind[gene_idx]
 
     res_table = tb.tabulate(
         res_dict.items(),
