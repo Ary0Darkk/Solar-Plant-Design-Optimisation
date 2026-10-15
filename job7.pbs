@@ -13,6 +13,8 @@
 #PBS -M 23b0343@iitb.ac.in
 #PBS -m abe
 
+# Ensure standard user tool paths are available
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 # =========================================================
 # MOVE TO PROJECT DIRECTORY
@@ -20,96 +22,100 @@
 
 cd "$PBS_O_WORKDIR" || exit 1
 
+# Ensure essential output directories exist
+mkdir -p logs results/GA_results checkpoints/GA
+
 echo "================================================="
 echo "NYS PySAM Seasonal Optimisation"
 echo "================================================="
 echo "Job ID       : $PBS_JOBID"
 echo "Job Name     : $PBS_JOBNAME"
 echo "Working Dir  : $PBS_O_WORKDIR"
-echo "Nodes        : $PBS_NODEFILE"
+echo "Node File    : $PBS_NODEFILE"
 echo "Total CPUs   : $PBS_NCPUS"
-echo "Season       : $SEASON"
 echo "================================================="
 
 
 # =========================================================
-# CHECK SEASON
+# CHECK SEASON (Default to summer if omitted)
 # =========================================================
 
-if [ -z "$SEASON" ]; then
-    echo "ERROR: SEASON was not specified."
-    echo "Submit using:"
-    echo "    qsub -v SEASON=winter season.pbs"
-    exit 1
+if [ -z "${SEASON:-}" ]; then
+    echo "NOTICE: SEASON was not specified via 'qsub -v SEASON=...'; defaulting to 'summer'."
+    echo "To run another season, submit using: qsub -v SEASON=winter job7.pbs"
+    SEASON="summer"
 fi
-
 
 case "$SEASON" in
     winter|summer|monsoon|post)
         ;;
     *)
-        echo "ERROR: Invalid season: $SEASON"
+        echo "ERROR: Invalid season: '$SEASON'"
         echo "Allowed: winter, summer, monsoon, post"
         exit 1
         ;;
 esac
 
+echo "Selected Season: $SEASON"
+
 
 # =========================================================
-# DAgshub / MLflow AUTHENTICATION
+# DAGSHUB / MLFLOW AUTHENTICATION
 # =========================================================
 
 if [ -f "$HOME/.dagshub_token" ]; then
-
     export MLFLOW_TRACKING_USERNAME="aryanvj787"
-
-    export MLFLOW_TRACKING_PASSWORD="$(
-        cat "$HOME/.dagshub_token"
-    )"
-
+    export MLFLOW_TRACKING_PASSWORD="$(cat "$HOME/.dagshub_token")"
     export MLFLOW_TRACKING_URI="https://dagshub.com/aryanvj787/NYS-Design-Optimisation-using-PySAM.mlflow"
-
     echo "MLflow/DagsHub authentication configured."
-
 else
-
     echo "WARNING: $HOME/.dagshub_token not found."
-    echo "MLflow logging may fail."
-
+    echo "MLflow will use local file logging fallback."
 fi
+
+
+# =========================================================
+# ENVIRONMENT MODULES (Cluster-dependent)
+# Uncomment / adjust if your cluster requires environment modules
+# =========================================================
+# module purge
+# module load openmpi
+# or: module load intel-mpi
 
 
 # =========================================================
 # PYTHON ENVIRONMENT
 # =========================================================
 
-# spack is NOT required here if your environment is
-# already configured for Python/mpi4py.
-
 if [ -f ".venv/bin/activate" ]; then
     source .venv/bin/activate
+elif [ -f "$PBS_O_WORKDIR/.venv/bin/activate" ]; then
+    source "$PBS_O_WORKDIR/.venv/bin/activate"
 else
-    echo "ERROR: .venv not found."
+    echo "ERROR: .venv/bin/activate not found in $PBS_O_WORKDIR."
+    echo "Ensure you installed dependencies with 'uv sync' or 'python -m venv .venv' on Linux."
     exit 1
 fi
+
+# Verify python executable
+echo "Python binary: $(which python)"
+python -c "import sys, deap, mpi4py, PySAM; print('Python & core packages verified:', sys.version.split()[0])" || {
+    echo "ERROR: Failed to import required python packages."
+    exit 1
+}
 
 
 # =========================================================
 # PARALLELISM CONTROL
 # =========================================================
 
-# PBS allocates:
-#
-#   7 nodes × 112 CPUs = 784 CPUs
-#
+# PBS allocates: 7 nodes x 112 CPUs = 784 CPUs
 export APP_CPU_COUNT="$PBS_NCPUS"
 
-# One multiprocessing pool per MPI rank.
+# One multiprocessing pool per MPI rank
 export LOCAL_WORKERS=112
 
-# Prevent NumPy / MKL / BLAS from creating additional
-# threads inside each multiprocessing worker.
-
+# Prevent NumPy / MKL / BLAS from oversubscribing threads inside worker processes
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
@@ -125,21 +131,11 @@ echo "Allocated nodes:"
 sort -u "$PBS_NODEFILE"
 
 echo ""
-echo "MPI ranks:"
-echo "7"
-
-echo ""
-echo "CPUs per MPI rank:"
-echo "112"
-
-echo ""
-echo "Total CPUs:"
-echo "$APP_CPU_COUNT"
-
-echo ""
-echo "Season:"
-echo "$SEASON"
-
+echo "MPI ranks: 7"
+echo "CPUs per MPI rank: 112"
+echo "Total CPUs: $APP_CPU_COUNT"
+echo "Local workers per rank: $LOCAL_WORKERS"
+echo "Season: $SEASON"
 echo ""
 echo "================================================="
 echo "Starting MPI optimisation..."
@@ -148,12 +144,14 @@ echo "================================================="
 
 # =========================================================
 # RUN
+# Use --hostfile "$PBS_NODEFILE" for reliable node distribution
+# Use activated virtual environment's python directly (not uv run)
 # =========================================================
 
 mpirun -np 7 \
-    uv run python main.py \
+    --hostfile "$PBS_NODEFILE" \
+    python main.py \
     --season "$SEASON"
-
 
 EXIT_CODE=$?
 
