@@ -5,9 +5,8 @@
 # =========================================================
 
 #PBS -N NYS_PySAM_Optimization_2Nodes
-#PBS -q medium
-#PBS -l select=2:ncpus=112:mpiprocs=1
-#PBS -l place=scatter
+#PBS -q standard
+#PBS -l select=2:ncpus=128
 #PBS -l walltime=06:00:00
 #PBS -j oe
 #PBS -M 23b0343@iitb.ac.in
@@ -99,11 +98,11 @@ python -c "import sys, deap, mpi4py, PySAM; print('Python & core packages verifi
 # PARALLELISM CONTROL
 # =========================================================
 
-# PBS allocates: 2 nodes x 112 CPUs = 224 CPUs
+# PBS allocates: 2 nodes x 128 CPUs = 256 CPUs
 export APP_CPU_COUNT="$PBS_NCPUS"
 
 # One multiprocessing pool per MPI rank
-export LOCAL_WORKERS=112
+export LOCAL_WORKERS=128
 
 # Prevent NumPy / MKL / BLAS from oversubscribing threads inside worker processes
 export OMP_NUM_THREADS=1
@@ -122,7 +121,7 @@ sort -u "$PBS_NODEFILE"
 
 echo ""
 echo "MPI ranks: 2"
-echo "CPUs per MPI rank: 112"
+echo "CPUs per MPI rank: 128"
 echo "Total CPUs: $APP_CPU_COUNT"
 echo "Local workers per rank: $LOCAL_WORKERS"
 echo "Season: $SEASON"
