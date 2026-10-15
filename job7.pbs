@@ -5,7 +5,7 @@
 # =========================================================
 
 #PBS -N NYS_PySAM_Optimization
-#PBS -q large
+#PBS -q standard
 #PBS -l select=7:ncpus=112:mpiprocs=1
 #PBS -l place=scatter
 #PBS -l walltime=12:00:00
