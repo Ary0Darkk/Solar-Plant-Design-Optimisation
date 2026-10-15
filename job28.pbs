@@ -11,22 +11,42 @@
 
 set -u
 
+# Ensure standard user tool paths are available
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 cd "$PBS_O_WORKDIR" || exit 1
 
-echo "Job ID: $PBS_JOBID"
+# Ensure essential output directories exist
+mkdir -p logs results/GA_results checkpoints/GA
+
+echo "================================================="
+echo "NYS PySAM All Seasons Parallel Run - 28 Nodes"
+echo "================================================="
+echo "Job ID           : $PBS_JOBID"
 echo "Working directory: $PBS_O_WORKDIR"
-echo "Total CPUs: $PBS_NCPUS"
+echo "Total CPUs       : $PBS_NCPUS"
+echo "Node File        : $PBS_NODEFILE"
+echo "================================================="
 
 # ---------------------------------------------------------
 # Python environment
 # ---------------------------------------------------------
 
-if [ ! -f ".venv/bin/activate" ]; then
-    echo "ERROR: .venv not found."
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+elif [ -f "$PBS_O_WORKDIR/.venv/bin/activate" ]; then
+    source "$PBS_O_WORKDIR/.venv/bin/activate"
+else
+    echo "ERROR: .venv/bin/activate not found in $PBS_O_WORKDIR."
+    echo "Ensure you installed dependencies with 'uv sync' or 'python -m venv .venv' on Linux."
     exit 1
 fi
 
-source .venv/bin/activate
+echo "Python binary: $(which python)"
+python -c "import sys, deap, mpi4py, PySAM; print('Python & core packages verified:', sys.version.split()[0])" || {
+    echo "ERROR: Failed to import required python packages."
+    exit 1
+}
 
 # ---------------------------------------------------------
 # DagsHub / MLflow authentication
@@ -36,8 +56,9 @@ if [ -f "$HOME/.dagshub_token" ]; then
     export MLFLOW_TRACKING_USERNAME="aryanvj787"
     export MLFLOW_TRACKING_PASSWORD="$(cat "$HOME/.dagshub_token")"
     export MLFLOW_TRACKING_URI="https://dagshub.com/aryanvj787/NYS-Design-Optimisation-using-PySAM.mlflow"
+    echo "MLflow/DagsHub authentication configured."
 else
-    echo "WARNING: DagsHub token not found."
+    echo "WARNING: DagsHub token not found. MLflow will use local file fallback."
 fi
 
 # ---------------------------------------------------------
@@ -53,60 +74,57 @@ export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
 # ---------------------------------------------------------
-# Split the 28 allocated hosts into four groups
+# Directory for hostfiles and logs (in project workspace)
 # ---------------------------------------------------------
 
-WORK_DIR="${TMPDIR:-/tmp}/nys_${PBS_JOBID//[^a-zA-Z0-9]/_}"
-mkdir -p "$WORK_DIR"
+SEASON_LOG_DIR="$PBS_O_WORKDIR/logs/all_seasons_${PBS_JOBID//[^a-zA-Z0-9]/_}"
+mkdir -p "$SEASON_LOG_DIR"
 
-sort -u "$PBS_NODEFILE" > "$WORK_DIR/all_hosts.txt"
-
-HOST_COUNT=$(wc -l < "$WORK_DIR/all_hosts.txt")
+sort -u "$PBS_NODEFILE" > "$SEASON_LOG_DIR/all_hosts.txt"
+HOST_COUNT=$(wc -l < "$SEASON_LOG_DIR/all_hosts.txt")
 
 if [ "$HOST_COUNT" -ne 28 ]; then
     echo "ERROR: Expected 28 unique hosts, found $HOST_COUNT."
     echo "Allocated hosts:"
-    cat "$WORK_DIR/all_hosts.txt"
+    cat "$SEASON_LOG_DIR/all_hosts.txt"
     exit 1
 fi
 
-sed -n '1,7p'   "$WORK_DIR/all_hosts.txt" > "$WORK_DIR/winter.hosts"
-sed -n '8,14p'  "$WORK_DIR/all_hosts.txt" > "$WORK_DIR/summer.hosts"
-sed -n '15,21p' "$WORK_DIR/all_hosts.txt" > "$WORK_DIR/monsoon.hosts"
-sed -n '22,28p' "$WORK_DIR/all_hosts.txt" > "$WORK_DIR/post.hosts"
+sed -n '1,7p'   "$SEASON_LOG_DIR/all_hosts.txt" > "$SEASON_LOG_DIR/winter.hosts"
+sed -n '8,14p'  "$SEASON_LOG_DIR/all_hosts.txt" > "$SEASON_LOG_DIR/summer.hosts"
+sed -n '15,21p' "$SEASON_LOG_DIR/all_hosts.txt" > "$SEASON_LOG_DIR/monsoon.hosts"
+sed -n '22,28p' "$SEASON_LOG_DIR/all_hosts.txt" > "$SEASON_LOG_DIR/post.hosts"
 
 echo "Host allocation:"
-for season in winter summer monsoon post; do
-    echo "---- $season ----"
-    cat "$WORK_DIR/$season.hosts"
+for s in winter summer monsoon post; do
+    echo "---- $s ----"
+    cat "$SEASON_LOG_DIR/$s.hosts"
 done
 
 # ---------------------------------------------------------
-# Launch four independent MPI runs
+# Launch four independent MPI runs (direct python, no uv run)
 # ---------------------------------------------------------
 
-# IMPORTANT:
-# Confirm that your cluster's MPI implementation supports
-# hostfile-restricted launches inside PBS before production use.
+echo "Launching 4 season jobs..."
 
-mpirun -hostfile "$WORK_DIR/winter.hosts" -np 7 \
-    uv run python main.py --season winter \
-    > "$WORK_DIR/winter.log" 2>&1 &
+mpirun --hostfile "$SEASON_LOG_DIR/winter.hosts" -np 7 \
+    python main.py --season winter \
+    > "$SEASON_LOG_DIR/winter.log" 2>&1 &
 PID_WINTER=$!
 
-mpirun -hostfile "$WORK_DIR/summer.hosts" -np 7 \
-    uv run python main.py --season summer \
-    > "$WORK_DIR/summer.log" 2>&1 &
+mpirun --hostfile "$SEASON_LOG_DIR/summer.hosts" -np 7 \
+    python main.py --season summer \
+    > "$SEASON_LOG_DIR/summer.log" 2>&1 &
 PID_SUMMER=$!
 
-mpirun -hostfile "$WORK_DIR/monsoon.hosts" -np 7 \
-    uv run python main.py --season monsoon \
-    > "$WORK_DIR/monsoon.log" 2>&1 &
+mpirun --hostfile "$SEASON_LOG_DIR/monsoon.hosts" -np 7 \
+    python main.py --season monsoon \
+    > "$SEASON_LOG_DIR/monsoon.log" 2>&1 &
 PID_MONSOON=$!
 
-mpirun -hostfile "$WORK_DIR/post.hosts" -np 7 \
-    uv run python main.py --season post \
-    > "$WORK_DIR/post.log" 2>&1 &
+mpirun --hostfile "$SEASON_LOG_DIR/post.hosts" -np 7 \
+    python main.py --season post \
+    > "$SEASON_LOG_DIR/post.log" 2>&1 &
 PID_POST=$!
 
 # ---------------------------------------------------------
@@ -131,7 +149,7 @@ echo "winter : $STATUS_WINTER"
 echo "summer : $STATUS_SUMMER"
 echo "monsoon: $STATUS_MONSOON"
 echo "post   : $STATUS_POST"
-echo "Logs   : $WORK_DIR"
+echo "Logs preserved at: $SEASON_LOG_DIR"
 echo "================================================="
 
 if [ "$STATUS_WINTER" -ne 0 ] ||
