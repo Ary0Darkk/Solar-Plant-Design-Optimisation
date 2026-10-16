@@ -4,6 +4,7 @@ Synchronized rank logging, optional MLflow/DagsHub tracking, and results exporti
 
 import json
 import logging
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -87,24 +88,42 @@ def init_tracking(
     repo_name: str = "NYS-Design-Optimisation-using-PySAM",
     experiment_name: str = "CSP_Seasonal_GA",
 ) -> bool:
-    """Connect to DagsHub / MLflow if enabled and available."""
+    """Connect to DagsHub if credentials exist, otherwise gracefully fall back to local MLflow."""
     if not enabled:
         logger.info("Remote experiment tracking disabled by user flag.")
         return False
 
-    if dagshub is not None:
+    token_file = Path.home() / ".dagshub_token"
+    has_credentials = (
+        token_file.exists()
+        or bool(os.environ.get("DAGSHUB_USER_TOKEN"))
+        or bool(os.environ.get("MLFLOW_TRACKING_PASSWORD"))
+    )
+
+    if has_credentials and dagshub is not None:
         try:
+            if token_file.exists() and not os.environ.get("DAGSHUB_USER_TOKEN"):
+                os.environ["DAGSHUB_USER_TOKEN"] = token_file.read_text(encoding="utf-8").strip()
             dagshub.init(repo_owner=repo_owner, repo_name=repo_name, mlflow=True)
             mlflow.set_experiment(experiment_name)
+            logger.info("DagsHub tracking initialized for %s/%s", repo_owner, repo_name)
             return True
         except Exception as exc:
-            logger.warning("Could not initialize DagsHub (%s). Continuing with local MLflow fallback.", exc)
+            logger.warning("Could not initialize DagsHub (%s). Falling back to local MLflow tracking.", exc)
 
+    # Local MLflow fallback (never prompts or hangs)
     try:
+        db_path = PROJECT_ROOT / "results" / "mlflow.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        mlflow.set_tracking_uri(f"sqlite:///{db_path.as_posix()}")
         mlflow.set_experiment(experiment_name)
+        logger.info("Local MLflow tracking active at sqlite:///%s", db_path)
         return True
-    except Exception:
+    except Exception as exc:
+        logger.warning("Local MLflow initialization failed (%s). Continuing without tracking.", exc)
         return False
+
+
 
 
 def sanitize_key(name: Any) -> str:

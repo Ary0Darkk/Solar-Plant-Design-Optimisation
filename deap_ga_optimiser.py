@@ -1,17 +1,18 @@
+#!/usr/bin/env python3
 """
-DEAP Genetic Algorithm Optimiser for Concentrated Solar Power (CSP).
-Now powered by the memory-optimized pipeline (`optimized_pipeline`).
+DEAP Genetic Algorithm Optimiser for Concentrated Solar Power (CSP) Plant Design.
+Powered by the memory-optimized pipeline (`optimized_pipeline`).
 
-This module replaces the legacy monolithic optimizer with high-performance,
-memory-efficient components (24-hour simulation slicing, process recycling,
-pre-computed tariffs, gzip checkpointing, and MPI coordination).
+Usage:
+    python deap_ga_optimiser.py
+    python deap_ga_optimiser.py --season winter --pop-size 28 --generations 10
 """
 
 import logging
 from typing import Any, Dict, Optional, Tuple
 
 from config import CONFIG
-from optimized_pipeline.cli import main
+from optimized_pipeline.cli import main, parse_arguments
 from optimized_pipeline.config import PipelineConfig, get_pipeline_config
 from optimized_pipeline.engine import run_optimization
 from optimized_pipeline.parallel import Communicator, get_communicator
@@ -42,7 +43,6 @@ def run_deap_ga_optimisation(
     if num_generations is not None:
         cfg.ga.num_generations = num_generations
 
-    # Use existing communicator if provided, otherwise auto-detect
     active_comm: Optional[Communicator] = comm
     if active_comm is None:
         active_comm = get_communicator()
@@ -60,6 +60,7 @@ __all__ = [
     "get_season_days",
     "CONFIG",
     "main",
+    "parse_arguments",
 ]
 
 if __name__ == "__main__":
