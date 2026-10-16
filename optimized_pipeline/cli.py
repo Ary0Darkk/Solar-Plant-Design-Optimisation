@@ -117,11 +117,17 @@ def main(argv=None):
     ts = comm.bcast(ts, root=0)
 
     logger = setup_logger(rank=rank, timestamp=ts)
-    logger.info("[Rank %d/%d] Starting optimized pipeline for season: %s", rank, size, args.season)
+    logger.info("=" * 60)
+    logger.info("Concentrated Solar Power (CSP) Genetic Algorithm Optimization")
+    logger.info("Season: %s | Pop: %d | Gens: %d | Workers: %d | Rank: %d/%d",
+                args.season, config.ga.pop_size, config.ga.num_generations, workers, rank, size)
+    logger.info("Hint: For a faster run, use: python deap_ga_optimiser.py --pop-size 14 --generations 5")
+    logger.info("=" * 60)
 
     if rank == 0:
         if not args.no_tracking:
             init_tracking()
+
 
 
         try:

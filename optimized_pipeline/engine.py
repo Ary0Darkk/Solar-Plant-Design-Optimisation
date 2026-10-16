@@ -85,9 +85,17 @@ def evaluate_batch_memory_optimized(
     # Stream task results generator
     chunksize = max(1, len(tasks) // (getattr(pool, "_processes", 4) * 4))
     results_by_ind: Dict[int, List[Tuple[int, Optional[float], bool]]] = {i: [] for i in range(len(batch))}
+    total_tasks = len(tasks)
+    done_tasks = 0
+    log_interval = max(10, total_tasks // 10)
 
     for ind_idx, l_idx, obj, pen in pool.imap_unordered(_eval_single_task, tasks, chunksize=chunksize):
         results_by_ind[ind_idx].append((l_idx, obj, pen))
+        done_tasks += 1
+        if done_tasks % log_interval == 0 or done_tasks == total_tasks:
+            logger.info("[Rank %d] Simulation progress: %d/%d tasks evaluated (%.1f%%)",
+                        rank, done_tasks, total_tasks, 100.0 * done_tasks / total_tasks)
+
 
     successful = 0
     penalized = 0
