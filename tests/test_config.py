@@ -4,19 +4,19 @@ Unit tests for configuration models and defaults.
 
 import pytest
 
-from solar_opt.config import (
-    DEFAULT_DESIGN_BOUNDS,
-    DEFAULT_OPERATIONAL_BOUNDS,
-    DEFAULT_SEASONS,
+from optimized_pipeline.config import (
+    DESIGN_BOUNDS,
+    OPERATIONAL_BOUNDS,
+    SEASONS,
     VariableBounds,
-    get_default_config,
+    get_pipeline_config,
 )
 
 
 def test_default_seasons():
     """Verify all 4 seasons exist and have exactly 7 representative days."""
-    assert set(DEFAULT_SEASONS.keys()) == {"winter", "summer", "monsoon", "post"}
-    for season, days in DEFAULT_SEASONS.items():
+    assert set(SEASONS.keys()) == {"winter", "summer", "monsoon", "post"}
+    for season, days in SEASONS.items():
         assert len(days) == 7, f"Season {season} should have 7 representative days"
         for m, d in days:
             assert 1 <= m <= 12
@@ -25,13 +25,13 @@ def test_default_seasons():
 
 def test_variable_bounds():
     """Verify default design and operational bounds are positive and non-empty."""
-    assert len(DEFAULT_DESIGN_BOUNDS.names) == 5
-    assert len(DEFAULT_OPERATIONAL_BOUNDS.names) == 3
+    assert len(DESIGN_BOUNDS.names) == 5
+    assert len(OPERATIONAL_BOUNDS.names) == 3
 
-    for low, high in zip(DEFAULT_DESIGN_BOUNDS.lb, DEFAULT_DESIGN_BOUNDS.ub):
+    for low, high in zip(DESIGN_BOUNDS.lb, DESIGN_BOUNDS.ub):
         assert low <= high
 
-    for low, high in zip(DEFAULT_OPERATIONAL_BOUNDS.lb, DEFAULT_OPERATIONAL_BOUNDS.ub):
+    for low, high in zip(OPERATIONAL_BOUNDS.lb, OPERATIONAL_BOUNDS.ub):
         assert low <= high
 
 
@@ -48,7 +48,7 @@ def test_invalid_bounds_raise():
 
 def test_to_legacy_dict():
     """Verify that to_legacy_dict exports all expected keys."""
-    cfg = get_default_config()
+    cfg = get_pipeline_config()
     d = cfg.to_legacy_dict()
 
     required_keys = [

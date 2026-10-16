@@ -1,3 +1,3 @@
 """
-Test suite for solar_opt package.
+Test suite for optimized_pipeline package.
 """

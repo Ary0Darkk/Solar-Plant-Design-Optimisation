@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "solar-opt"
-version = "0.2.0"
+version = "1.0.0"
 description = "Season-wise Concentrated Solar Power (CSP) genetic algorithm optimisation using PySAM and DEAP"
-readme = "README.md"
+readme = "Readme.md"
 requires-python = ">=3.12"
 dependencies = [
     "dagshub>=0.6.3",
@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-solar-opt = "solar_opt.cli:main"
+solar-opt = "optimized_pipeline.cli:main"
 
 [dependency-groups]
 dev = [
@@ -32,8 +32,8 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/solar_opt"]
+packages = ["optimized_pipeline"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["."]

@@ -4,7 +4,7 @@ Unit tests for weather and representative day indexing.
 
 import pytest
 
-from solar_opt.simulation.weather import get_season_days
+from optimized_pipeline.weather import get_season_days
 
 
 def test_get_season_days_count():

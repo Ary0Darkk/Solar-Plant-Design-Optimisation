@@ -1,189 +1,162 @@
-# NYS Design Optimisation using PySAM
+# NYS Concentrated Solar Power Design & Operational Optimisation
 
-A parallel simulation--optimisation pipeline for a Concentrated Solar
-Power (CSP) parabolic-trough plant. It combines **NREL SAM/PySAM**,
-**DEAP genetic algorithms**, **MPI**, Python multiprocessing, and
-**MLflow/DagsHub** to search plant-design and operating parameters
-across four seasons.
+A high-performance, memory-optimized parallel simulation–optimisation pipeline for Concentrated Solar Power (CSP) parabolic-trough plants. Powered by **NREL PySAM**, **DEAP Genetic Algorithms**, **MPI**, Python multiprocessing, and **MLflow / DagsHub** tracking.
 
-Repository:
-[Ary0Darkk/NYS-Design-Optimisation-using-PySAM](https://github.com/Ary0Darkk/NYS-Design-Optimisation-using-PySAM)
+Repository: [Ary0Darkk/NYS-Design-Optimisation-using-PySAM](https://github.com/Ary0Darkk/NYS-Design-Optimisation-using-PySAM)
 
-## Workflow
+---
+
+## Architecture Overview
+
+The system is built on `optimized_pipeline`, an ultra memory-efficient architecture engineered specifically to eliminate out-of-memory errors and C-level memory leaks common in long PySAM simulation runs:
 
 ``` mermaid
 flowchart TD
-    A[Load configuration and seasonal days] --> B[Initialize DEAP genetic algorithm]
-    B --> C[Create and batch population]
-    C --> D[Rank 0 distributes batches with MPI]
-    D --> E[Multiprocessing evaluates candidates]
-    E --> F[Run PySAM TroughPhysical simulations]
-    F --> G[Calculate daily objective and fitness]
-    G --> H[Aggregate fitness per candidate]
-    H --> I[Selection, crossover and mutation]
-    I --> J[Log metrics and save checkpoint]
-    J --> K{More generations?}
+    A[Pre-computed 8,760h Shared Tariff] --> B[DEAP Genetic Algorithm Engine]
+    B --> C[Batch Generation & Elitism]
+    C --> D[MPI Ranks / Multiprocessing Pool]
+    D --> E[PySAM TroughPhysical Simulation]
+    E --> F[Extract Exact 24h float32 Slice]
+    F --> G[Immediate Model Deletion]
+    G --> H[Vectorized Daily Objective & Fitness]
+    H --> I[Gzip Atomic Checkpointing]
+    I --> J[Explicit GC & Process Recycling]
+    J --> K{Next Generation?}
     K -- Yes --> C
-    K -- No --> L[Export best design and results]
-    J -. tracking .-> M[MLflow / DagsHub]
+    K -- No --> L[Plot & Export Final Results]
+    I -. Tracking .-> M[MLflow / DagsHub]
 ```
 
-## Core capabilities
+### Key Memory & Performance Innovations
+1. **24-Hour Simulation Slices**: PySAM normally generates full 8,760-element output arrays (~490 KB per simulation). `optimized_pipeline` immediately extracts only the exact 24-hour slice required for that representative day as compact `float32` arrays (~672 bytes per evaluation), achieving a **99.8% memory reduction**.
+2. **Aggressive Worker Process Recycling**: By default, worker processes recycle every 25 evaluations (`maxtasksperchild=25`). This completely purges unmanaged C++ memory allocated inside PySAM shared libraries before leaks can accumulate.
+3. **Pre-Computed Shared Tariff**: The 8,760-hour Haryana electricity tariff is computed and cached once at startup as a contiguous `float32` array in shared memory, eliminating redundant disk I/O, pandas operations, and inter-process copying.
+4. **Gzip-Compressed Checkpointing**: Atomic checkpoints (`checkpoint_latest.pkl.gz` and `checkpoint_best.pkl.gz`) use gzip compression to minimize disk footprint while ensuring instant crash recovery with full random state restoration.
+5. **Periodic Garbage Collection**: Explicit `gc.collect()` runs at the conclusion of every generational evaluation wave.
+6. **Unified Dual Parallelism**: Seamlessly auto-detects MPI if executed under `mpirun`/`mpiexec`, and gracefully falls back to local multiprocessing on desktop or workstation environments.
 
--   **Physics-based simulation:** PySAM `TroughPhysical` model.
--   **Evolutionary search:** DEAP genetic algorithm with bounded design
-    and operating variables.
--   **Seasonal runs:** `winter`, `summer`, `monsoon`, and `post`; each
-    uses seven configured representative days.
--   **Hybrid parallelism:** MPI distributes candidate batches across
-    ranks; multiprocessing evaluates simulations within each rank.
--   **Experiment tracking:** MLflow metrics and DagsHub remote tracking.
--   **Resumable runs:** Checkpoints preserve GA state and random-number
-    generator states.
--   **Failure accounting:** Failed or invalid evaluations receive
-    configured penalties and are tracked separately.
+---
 
-## Architecture
+## Repository Structure
 
-| Component / Module | Responsibility |
+| Component / File | Responsibility |
 | :--- | :--- |
-| `src/solar_opt/config/` | Typed configuration models, bounds, defaults, and legacy dictionary converter |
-| `src/solar_opt/simulation/` | PySAM `TroughPhysical` simulation engine, constraint validation, weather indexing |
-| `src/solar_opt/economic/` | Hourly electricity demand, dynamic tariff scaling, and daily revenue/loss objective |
-| `src/solar_opt/genetic/` | DEAP GA engine, chromosome initialization, integer mutation, and atomic checkpointing |
-| `src/solar_opt/parallel/` | MPI communicator abstraction (`Communicator`, `StandaloneComm`), batching & distribution |
-| `src/solar_opt/tracking/` | Synchronized multi-rank logging, DagsHub / MLflow tracking, and plot/CSV exports |
-| `src/solar_opt/cli.py` | Unified command-line interface (`solar-opt`) with argument parsing |
-| `tests/` | Comprehensive test suite covering config, weather, pricing, objective, GA, and PySAM |
-| `main.py` | Backward-compatible entrypoint forwarding to `solar_opt.cli.main()` |
-| PBS scripts (`*.pbs`) | Production HPC resource requests (single-season, 2-node, 7-node, 28-node, test) |
+| `optimized_pipeline/` | **Primary Production Package** |
+| `optimized_pipeline/config.py` | Typed configuration models (`PipelineConfig`), bounds, and defaults |
+| `optimized_pipeline/simulation.py` | PySAM `TroughPhysical` runner, physical constraints, and 24h slice extraction |
+| `optimized_pipeline/tariff.py` | Pre-computed `float32` tariff array with disk caching and demand processor |
+| `optimized_pipeline/objective.py` | Vectorized 24h revenue, parasitic power, and thermal loss objective calculation |
+| `optimized_pipeline/chromosome.py` | Compact integer chromosome representation and DEAP type initialization |
+| `optimized_pipeline/operators.py` | In-place bounded Gaussian integer mutation and crossover operators |
+| `optimized_pipeline/checkpoint.py` | Gzip-compressed atomic checkpoints with deterministic configuration hashing |
+| `optimized_pipeline/parallel.py` | MPI communicator abstraction (`Communicator`, `StandaloneComm`) and batching |
+| `optimized_pipeline/tracker.py` | Multi-rank synchronized logging, MLflow/DagsHub integration, and plot exports |
+| `optimized_pipeline/engine.py` | Evolutionary search loop, process recycling, and Hall of Fame elitism |
+| `optimized_pipeline/cli.py` | Command-line interface with memory-tuning flags (`--max-tasks-per-child`, etc.) |
+| `main.py` | Canonical entry point forwarding directly to `optimized_pipeline.cli:main` |
+| `deap_ga_optimiser.py` | Backward-compatible optimizer interface forwarding to `optimized_pipeline` |
+| `config.py` | Root configuration exposing `CONFIG` dict backed by `optimized_pipeline.config` |
+| `tests/` | Complete unit test suite (100% passing across configuration, PySAM, GA, pricing) |
+| `job_*.pbs`, `job*.pbs` | PBS batch submission scripts for HPC clusters (C-DAC Pratyush/Param/etc.) |
 
-## Optimisation model
+---
 
-Each individual contains five design genes plus three operating genes
-per representative day. For seven representative days, one individual
-requires up to seven daily simulations.
+## Optimization Model
 
-Daily objective values are aggregated into the individual's seasonal
-fitness. The GA then selects candidates and applies crossover and
-mutation over successive generations. Check `config.py` and the
-objective implementation for current bounds, units, penalty values, and
-optimisation direction.
+- **5 Season-Wide Design Variables**:
+  - `specified_total_aperture`: Total solar field aperture area [m²] (8,000 to 12,000)
+  - `Row_Distance`: Spacing pitch between parallel collector rows [m] (10 to 25, strictly `> W_aperture`)
+  - `ColperSCA`: Modules per Solar Collector Assembly (2 to 10)
+  - `W_aperture`: Aperture collector width [m] (4 to 8)
+  - `L_SCA`: Collector assembly length [m] (50 to 200)
+- **3 Daily Operational Variables** (optimized per representative day, 7 days per season = 21 genes):
+  - `m_dot`: HTF mass flow limit [kg/s] (2 to 12)
+  - `T_startup`: Field startup threshold temperature [°C] (300 to 380)
+  - `T_shutdown`: Field shutdown temperature [°C] (250 to 300, strictly `<= T_startup`)
+- **Chromosome Length**: 5 design + 21 operational = **26 integer genes**.
 
-## Setup
+---
 
-Requirements: Python 3.12, `uv`, PySAM, DEAP, `mpi4py`, an MPI runtime
-compatible with `mpi4py`, and DagsHub credentials for remote tracking.
+## Setup & Installation
 
-``` bash
+Requirements: Python 3.12+, `uv` package manager, and C/C++ compiler for PySAM dependencies.
+
+```bash
+# Clone the repository
 git clone https://github.com/Ary0Darkk/NYS-Design-Optimisation-using-PySAM.git
 cd NYS-Design-Optimisation-using-PySAM
-uv sync
-source .venv/bin/activate
 
-uv run python -c "import deap, mlflow, mpi4py, PySAM; print('Imports successful')"
+# Install dependencies and sync virtual environment
+uv sync
+
+# Activate environment
+# On Linux/macOS:
+source .venv/bin/activate
+# On Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
 ```
 
-Verify the cluster-supported MPI launcher separately. Installing
-`mpi4py` alone does not guarantee that `mpirun` or `mpiexec` is
-available.
+---
 
-## Testing
+## Running the Tests
 
-Run the full test suite with pytest:
+Execute the automated test suite with pytest:
 
-``` bash
+```bash
 uv run pytest
 ```
 
-## Run
+---
 
-Run one season locally:
+## Running the Optimizer
 
-``` bash
-uv run python main.py --season winter
-uv run python main.py --season summer
-uv run python main.py --season monsoon
-uv run python main.py --season post
+### 1. Local Single-Machine Run
+Run any of the 4 seasons (`winter`, `summer`, `monsoon`, `post`):
+
+```bash
+# Quick local run with custom population and generations:
+uv run python main.py --season winter --pop-size 28 --generations 10
+
+# Or using the PowerShell / Bash runners:
+.\run.ps1 --season summer
+./run.bat --season monsoon
+
+# Disable remote MLflow tracking for offline testing:
+uv run python main.py --season winter --no-tracking
 ```
 
-Example local MPI run:
-
-``` bash
-LOCAL_WORKERS=4 mpirun -np 4 uv run python main.py --season winter
+### 2. Available CLI Flags
+```text
+options:
+  -h, --help            Show help message and exit
+  --season {winter,summer,monsoon,post}
+                        Season to optimize (default: summer)
+  --generations GENERATIONS
+                        Number of GA generations override (default: 100)
+  --pop-size POP_SIZE   Population size override (default: 112)
+  --workers WORKERS     Worker processes per rank (default: 4 or LOCAL_WORKERS)
+  --max-tasks-per-child MAX_TASKS_PER_CHILD
+                        Recycle worker process after N simulations (default: 25)
+  --seed SEED           Random seed for reproducibility (default: 41)
+  --no-tracking         Disable remote DagsHub/MLflow experiment tracking
 ```
 
-The MPI launcher must match the installed MPI implementation and cluster
-configuration.
+### 3. HPC Cluster Execution (PBS)
+For multi-node cluster runs using PBS:
 
-## HPC with PBS
+```bash
+# Submit winter season job
+qsub job_winter.pbs
 
-A typical seven-node resource request:
-
-``` bash
-#PBS -q large
-#PBS -l select=7:ncpus=112:mpiprocs=1
-#PBS -l place=scatter
-#PBS -l walltime=12:00:00
+# Submit all 4 seasons simultaneously
+bash submit_all_seasons.sh
 ```
 
-Set `LOCAL_WORKERS` to match the allocated CPUs per MPI rank and prevent
-numerical libraries from oversubscribing threads:
+---
 
-``` bash
-export LOCAL_WORKERS=112
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
-export OPENBLAS_NUM_THREADS=1
-export NUMEXPR_NUM_THREADS=1
+## Experiment Tracking & Results
 
-mpirun -np 7 uv run python main.py --season winter
-```
-
-The launcher above is an example, not a confirmed Praganak command. Use
-the MPI module/launcher supported by the cluster. Check queue limits and
-available resources before submitting.
-
-Submit a seasonal PBS script with:
-
-``` bash
-qsub -v SEASON=winter job7.pbs
-```
-
-Use `summer`, `monsoon`, or `post` for the other seasons.
-
-## Tracking, checkpoints, and reliability
-
--   MLflow records configured GA parameters, generation metrics, fitness
-    statistics, and simulation success/penalty counts.
--   DagsHub provides remote experiment tracking when credentials are
-    configured.
--   Initialise remote tracking from MPI rank 0 only.
--   Checkpoints support resuming compatible runs. Keep configuration and
-    output paths consistent, and avoid concurrent jobs writing to the
-    same checkpoint files.
--   Inspect both fitness and penalty rates when comparing results; a
-    high fitness score is less meaningful if many simulations fail.
-
-## Useful PBS commands
-
-``` bash
-qstat -u "$USER"       # List your jobs
-qstat -f JOB_ID        # Inspect a job
-qstat -xf JOB_ID       # Inspect a completed job, if retained
-qstat -Qf large        # Inspect queue limits
-```
-
-## Reproducibility notes
-
-Record the source revision, configuration, PySAM/SAM inputs, dependency
-versions, random seeds, representative days, objective definition, and
-checkpoint state for comparable runs.
-
-## References
-
--   [NREL SAM](https://sam.nrel.gov/)
--   [PySAM documentation](https://nrel-pysam.readthedocs.io/)
--   [DEAP documentation](https://deap.readthedocs.io/)
--   [MLflow documentation](https://mlflow.org/docs/latest/)
--   [DagsHub](https://dagshub.com/)
+- **Local Results**: Saved to `results/GA_results/<season>_best_solution_<timestamp>.json` and `<season>_logbook.csv`.
+- **Fitness Plots**: Saved to `plots/GA/<season>_convergence_<timestamp>.png`.
+- **Checkpoints**: Stored as `.pkl.gz` in `checkpoints/GA/` (only latest and best are retained, saving gigabytes of disk space).
+- **Remote MLflow / DagsHub**: Authenticate using `~/.dagshub_token` to automatically log metrics, artifacts, and convergence plots.

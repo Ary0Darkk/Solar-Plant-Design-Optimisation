@@ -17,3 +17,6 @@ results
 logs
 sim_cache
 plots
+mlflow.db
+mlruns/
+.pytest_cache/
