@@ -3,6 +3,7 @@ Vectorized economic objective function operating on 24-hour float32 slices.
 """
 
 from typing import Optional
+
 import numpy as np
 
 from .simulation import DailySimulationSlice

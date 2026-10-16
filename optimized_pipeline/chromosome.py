@@ -5,10 +5,7 @@ Memory-efficient integer chromosome representation and DEAP primitives.
 import random
 from typing import Any, Callable, List, Sequence, Tuple
 
-from deap import base, creator, tools
-import numpy as np
-
-from .config import DESIGN_BOUNDS, OPERATIONAL_BOUNDS
+from deap import base, creator
 
 
 def init_deap_types() -> None:

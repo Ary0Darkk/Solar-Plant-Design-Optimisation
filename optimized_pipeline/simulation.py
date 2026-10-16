@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from numbers import Real
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import PySAM.TroughPhysical as TP

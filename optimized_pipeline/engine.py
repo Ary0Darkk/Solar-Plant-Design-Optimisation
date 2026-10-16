@@ -7,11 +7,10 @@ import logging
 import multiprocessing as mp
 import random
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from deap import algorithms, base, creator, tools
 import numpy as np
+from deap import algorithms, base, creator, tools
 
 from .checkpoint import (
     compute_signature,
@@ -24,7 +23,7 @@ from .chromosome import (
     init_deap_types,
     serialize_pop,
 )
-from .config import PipelineConfig, PROJECT_ROOT
+from .config import PROJECT_ROOT, PipelineConfig
 from .objective import compute_daily_objective_value
 from .operators import build_bounded_mutation
 from .parallel import Communicator, partition_batches

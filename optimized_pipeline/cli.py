@@ -120,9 +120,9 @@ def main(argv=None):
     logger.info("[Rank %d/%d] Starting optimized pipeline for season: %s", rank, size, args.season)
 
     if rank == 0:
-        tracking_active = False
         if not args.no_tracking:
-            tracking_active = init_tracking()
+            init_tracking()
+
 
         try:
             with mlflow.start_run(run_name=f"GA_Opt_{args.season}"):

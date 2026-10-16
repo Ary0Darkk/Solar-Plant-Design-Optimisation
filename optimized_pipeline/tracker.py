@@ -4,13 +4,13 @@ Synchronized rank logging, optional MLflow/DagsHub tracking, and results exporti
 
 import json
 import logging
-import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import mlflow
@@ -263,17 +263,17 @@ def plot_and_export(
     fit_gain = best_fitness - initial_fit
     report_lines = [
         f"# CSP Genetic Algorithm Optimization Report — {season.capitalize()}",
-        f"",
+        "",
         f"- **Execution Timestamp**: `{timestamp}`",
         f"- **Season**: `{season}`",
         f"- **Final Best Fitness**: `{best_fitness:,.2f} INR`",
         f"- **Initial Gen 0 Best**: `{initial_fit:,.2f} INR`",
         f"- **Optimization Gain**: `+{fit_gain:,.2f} INR`",
         f"- **Total Generations**: `{len(gens)}`",
-        f"",
-        f"## 1. Optimal Plant Design Parameters",
-        f"| Parameter | Value | Unit / Description |",
-        f"| :--- | :--- | :--- |",
+        "",
+        "## 1. Optimal Plant Design Parameters",
+        "| Parameter | Value | Unit / Description |",
+        "| :--- | :--- | :--- |",
     ]
     units_map = {
         "specified_total_aperture": "m² (Solar field reflective area)",
@@ -287,10 +287,10 @@ def plot_and_export(
         report_lines.append(f"| `{k}` | **{v}** | {desc} |")
 
     report_lines.extend([
-        f"",
-        f"## 2. Daily Operational Schedule (7 Representative Days)",
-        f"| Day | Date | Mass Flow Limit (kg/s) | Startup Temp (°C) | Shutdown Temp (°C) |",
-        f"| :--- | :--- | :--- | :--- | :--- |",
+        "",
+        "## 2. Daily Operational Schedule (7 Representative Days)",
+        "| Day | Date | Mass Flow Limit (kg/s) | Startup Temp (°C) | Shutdown Temp (°C) |",
+        "| :--- | :--- | :--- | :--- | :--- |",
     ])
     for r in ops_rows:
         report_lines.append(

@@ -8,7 +8,7 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 
-from .config import TariffConfig, PROJECT_ROOT
+from .config import PROJECT_ROOT, TariffConfig
 
 _CACHED_TARIFF_ARRAY: Optional[np.ndarray] = None
 

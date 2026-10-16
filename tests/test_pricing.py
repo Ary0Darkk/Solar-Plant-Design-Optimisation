@@ -4,7 +4,6 @@ Unit tests for dynamic electricity pricing and tariff calculation.
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from optimized_pipeline.tariff import (
     compute_tariff,

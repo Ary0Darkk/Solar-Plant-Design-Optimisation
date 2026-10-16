@@ -14,7 +14,7 @@ from config import CONFIG
 from optimized_pipeline.cli import main
 from optimized_pipeline.config import PipelineConfig, get_pipeline_config
 from optimized_pipeline.engine import run_optimization
-from optimized_pipeline.parallel import Communicator, StandaloneComm, get_communicator
+from optimized_pipeline.parallel import Communicator, get_communicator
 from optimized_pipeline.weather import get_season_days
 
 

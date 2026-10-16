@@ -3,7 +3,6 @@ Unit tests for PySAM physical constraints and simulation runner.
 """
 
 from optimized_pipeline.simulation import (
-    PySAMSimulator,
     get_simulator,
     validate_constraints,
 )
