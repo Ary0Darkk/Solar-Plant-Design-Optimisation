@@ -1,7 +1,10 @@
 from datetime import date
+
 from config import CONFIG
 
-REFERENCE_YEAR = 2020
+# Standard non-leap reference year (365 days / 8,760 hours)
+# Matches the 8,760-hour weather dataset and 8,760-hour price dataset (which omit Feb 29)
+REFERENCE_YEAR = 2021
 
 
 def get_season_days(season):
@@ -13,8 +16,8 @@ def get_season_days(season):
         A list containing:
 
         local_index:
-            Position of the representative day within the season.
-            Used to select the 3 operational genes.
+            Position of the representative day within the season (0 to 6).
+            Used to select the 3 daily operational genes.
 
         month:
             Calendar month.
@@ -23,9 +26,9 @@ def get_season_days(season):
             Calendar day.
 
         day_index:
-            Zero-based day-of-year.
-            Used by objective_function() to select the
-            corresponding 24-hour electricity-price block.
+            Zero-based day-of-year (0 to 364).
+            Used by PySAM SystemControl (day_index * 86400) and
+            objective_function() to select the exact 24-hour block (day_index * 24).
     """
 
     season_dates = CONFIG["SEASONS"][season]

@@ -1,7 +1,0 @@
-# Enforce LF endings on shell scripts and PBS files
-*.sh text eol=lf
-*.pbs text eol=lf
-*.py text eol=lf
-*.json text eol=lf
-*.toml text eol=lf
-*.md text eol=lf

@@ -1,9 +1,13 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import sys
 import os
+import sys
+from pathlib import Path
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import matplotlib.pyplot as plt
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import CONFIG
 
@@ -17,9 +21,12 @@ def plot_dni_consecutive(selections):
     """
     print(selections)
     all_selected_data = []
-    df = pd.read_csv(
-        "simulation/28.428_77.159_28.428_77.159_himawari_60_2020.csv", skiprows=2
+    weather_csv = (
+        PROJECT_ROOT
+        / "simulation"
+        / "28.428_77.159_28.428_77.159_himawari_60_2020.csv"
     )
+    df = pd.read_csv(weather_csv, skiprows=2)
 
     for month, day in selections:
         day_data = df[(df["Month"] == month) & (df["Day"] == day)].copy()
@@ -62,7 +69,14 @@ def plot_dni_consecutive(selections):
     plt.xticks(rotation=45)
     plt.grid(True, linestyle="--", alpha=0.5)
     plt.tight_layout()
-    plt.show()
+    plots_dir = PROJECT_ROOT / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    out_path = plots_dir / "dni_weather_plot.png"
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    print(f"Plot successfully saved to: {out_path}")
+    if os.environ.get("SHOW_PLOTS", "0") == "1":
+        plt.show()
+    plt.close()
 
 
 # --- Example Usage ---

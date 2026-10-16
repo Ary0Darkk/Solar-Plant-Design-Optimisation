@@ -1,7 +1,8 @@
+# Solar plant simulation core module
 import json
 import logging
-import time
 import sys
+import time
 from numbers import Real
 from pathlib import Path
 from typing import TypedDict
@@ -14,7 +15,6 @@ if str(PROJECT_ROOT) not in sys.path:
 import PySAM.TroughPhysical as TP
 
 from config import CONFIG
-
 
 # --------------------------------------------------
 # Type definitions

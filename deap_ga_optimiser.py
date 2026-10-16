@@ -1,31 +1,31 @@
-import os
-import re
-import random
-import json
 import hashlib
-import pickle
+import json
 import multiprocessing as mp
+import os
+import pickle
+import random
+import re
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib
 import mlflow
 import numpy as np
 import pandas as pd
 import tabulate as tb
 
-import matplotlib
-
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+from deap import algorithms, base, creator, tools
 from matplotlib.ticker import MultipleLocator
 
-from deap import base, creator, tools, algorithms
-
 from config import CONFIG
-from simulation.simulation import run_simulation
-from objective_func import objective_function
 from index_creation import get_season_days
+from objective_func import objective_function
+from simulation.simulation import run_simulation
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 def log_generation_metrics(
@@ -520,6 +520,10 @@ def run_one_simulation(
         var_names[j]: var_types[j](simulation_input[j]) for j in range(len(var_names))
     }
 
+    # Ensure shutdown temperature never exceeds startup temperature
+    if "T_shutdown" in overrides and "T_startup" in overrides:
+        overrides["T_shutdown"] = min(overrides["T_shutdown"], overrides["T_startup"])
+
     # -------------------------------------------------
     # Run PySAM
     # -------------------------------------------------
@@ -710,10 +714,14 @@ def run_deap_ga_optimisation(
     #     var_types=design_var_types + operational_var_types,
     # )
 
+    tourn_size = CONFIG.get("tournament_size", 7)
+    if pop_size is not None and tourn_size > pop_size:
+        tourn_size = max(2, pop_size // 2) if pop_size >= 2 else 1
+
     toolbox.register(
         "select",
         tools.selTournament,
-        tournsize=CONFIG.get("tournament_size"),
+        tournsize=tourn_size,
     )
     toolbox.register("mate", tools.cxTwoPoint)
 
@@ -755,6 +763,7 @@ def run_deap_ga_optimisation(
     ckpt_key = hashlib.sha256(
         json.dumps(
             {
+                "season": season,
                 "vars": design_var + operational_var,
                 "types": [t.__name__ for t in design_var_types + operational_var_types],
                 "lb": design_lb + operational_lb,
@@ -780,15 +789,17 @@ def run_deap_ga_optimisation(
             logger.warning(f"Checkpoint save failed: {e}")
             return False
 
-    checkpoint_dir = Path(__file__).resolve().parents[1] / "checkpoints" / ckpt_key
-
-    # BASE_DIR = (
-    # Path(__file__).resolve().parents[1]
-    # )  # Directory of the current script
-    checkpoint_dir = Path(f"checkpoints/GA/{ckpt_key}")
-
-    resume_file = Path(f"{checkpoint_dir}/checkpoint_latest.pkl")
+    checkpoint_dir = PROJECT_ROOT / "checkpoints" / "GA" / season / ckpt_key
+    resume_file = checkpoint_dir / "checkpoint_latest.pkl"
     resume_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Check for legacy top-level checkpoints if season-specific directory is empty
+    if not resume_file.exists() and CONFIG.get("resume_from_checkpoint", False):
+        legacy_dir = PROJECT_ROOT / "checkpoints" / "GA" / "66eb56f64973"
+        legacy_file = legacy_dir / "checkpoint_latest.pkl"
+        if season == "summer" and legacy_file.exists():
+            logger.info("Found legacy Summer checkpoint in %s; linking for resumption.", legacy_file)
+            resume_file = legacy_file
 
     # ------- Resume or fresh start -----------------------
     run_successful_total = 0
@@ -799,8 +810,20 @@ def run_deap_ga_optimisation(
             with open(resume_file, "rb") as f:
                 cp = pickle.load(f)
 
-            # Validate that the checkpoint matches the current configuration.
-            if cp.get("ckpt_key") != ckpt_key:
+            # Validate that the checkpoint matches or has compatible chromosome dimensions
+            valid_key = (cp.get("ckpt_key") == ckpt_key)
+            if not valid_key:
+                pop_data = cp.get("pop", [])
+                if len(pop_data) == pop_size and len(pop_data[0][0]) == (5 + 3 * num_days):
+                    logger.info(
+                        "Accepting compatible checkpoint (key: %s, gen: %d, pop: %d).",
+                        cp.get("ckpt_key"),
+                        cp.get("generation"),
+                        len(pop_data),
+                    )
+                    valid_key = True
+
+            if not valid_key:
                 logger.warning(
                     "Checkpoint key mismatch! Starting fresh to avoid Gene corruption."
                 )
@@ -849,6 +872,13 @@ def run_deap_ga_optimisation(
     stats.register("min", np.min)
     stats.register("max", np.max)
 
+    gens_log = [entry["gen"] for entry in logbook] if logbook else []
+    max_fitness_log = [entry["max"] for entry in logbook] if logbook else []
+    avg_fitness_log = [entry["avg"] for entry in logbook] if logbook else []
+
+    plot_path = PROJECT_ROOT / "plots" / "GA_plots" / f"{season}_fitness_vs_gen_{timestamp}.png"
+    plot_path.parent.mkdir(parents=True, exist_ok=True)
+
     if start_gen == 0:
         initial_stats = evaluate_population(
             population=pop,
@@ -863,27 +893,32 @@ def run_deap_ga_optimisation(
         run_successful_total += initial_stats["successful"]
         run_penalized_total += initial_stats["penalized"]
 
-        initial_total = initial_stats["successful"] + initial_stats["penalized"]
+        hof.update(pop)
+        record = stats.compile(pop)
+        logbook.record(gen=0, nevals=len(pop), **record)
 
-        mlflow.log_metrics(
-            {
-                "simulations/initial_successful": initial_stats["successful"],
-                "simulations/initial_penalized": initial_stats["penalized"],
-                "simulations/initial_total": initial_total,
-            },
-            step=0,
+        log_generation_metrics(
+            population=pop,
+            hof=hof,
+            record=record,
+            nevals=len(pop),
+            gen=0,
+            design_var=design_var,
+            operational_var=operational_var,
+            season_days=season_days,
+            simulation_successful=initial_stats["successful"],
+            simulation_penalized=initial_stats["penalized"],
+            run_successful_total=run_successful_total,
+            run_penalized_total=run_penalized_total,
+            logger=logger,
         )
 
-        hof.update(pop)
+        gens_log.append(0)
+        max_fitness_log.append(record["max"])
+        avg_fitness_log.append(record["avg"])
 
-    gens_log = []
-    max_fitness_log = []
-    avg_fitness_log = []
-
-    plot_path = Path(f"plots/GA_plots/{season}_fitness_vs_gen_{timestamp}.png")
-    plot_path.parent.mkdir(parents=True, exist_ok=True)
     # ----------- GA loop ------------------------------------
-    for gen in range(start_gen, num_generations):
+    for gen in range(max(1, start_gen), num_generations):
         offspring = algorithms.varAnd(pop, toolbox, cxpb, mutpb)
         evaluation_stats = evaluate_population(
             population=offspring,
@@ -900,10 +935,10 @@ def run_deap_ga_optimisation(
         run_successful_total += evaluation_stats["successful"]
         run_penalized_total += evaluation_stats["penalized"]
 
-        # True elitism: select pop_size - len(hof) from offspring, preserve Hall of Fame
-        hof_size = len(hof)
-        pop = toolbox.select(offspring, k=pop_size - hof_size)
-        pop.extend([toolbox.clone(ind) for ind in hof])
+        # True elitism: preserve up to len(hof) elites, selecting remaining from offspring
+        elite_count = min(len(hof), max(1, pop_size // 2)) if pop_size <= len(hof) else len(hof)
+        pop = toolbox.select(offspring, k=pop_size - elite_count)
+        pop.extend([toolbox.clone(ind) for ind in hof[:elite_count]])
         hof.update(pop)
 
         record = stats.compile(pop)
@@ -948,6 +983,7 @@ def run_deap_ga_optimisation(
         best_ind = hof[0]
 
         cp_data = {
+            "season": season,
             "var_name": design_var + operational_var,
             "var_types": design_var_types + operational_var_types,
             "lb": design_lb + operational_lb,
@@ -1075,7 +1111,7 @@ def run_deap_ga_optimisation(
 
     result_logbook.index.name = "serial"
 
-    file_name = Path(f"results/GA_results/{season}_{timestamp}.csv")
+    file_name = PROJECT_ROOT / "results" / "GA_results" / f"{season}_{timestamp}.csv"
 
     file_name.parent.mkdir(
         parents=True,
@@ -1091,7 +1127,7 @@ def run_deap_ga_optimisation(
     # Save best solution JSON
     # ---------------------------------------------------------
 
-    best_solution_path = Path(f"results/GA_results/best_solution_{season}.json")
+    best_solution_path = PROJECT_ROOT / "results" / "GA_results" / f"best_solution_{season}.json"
 
     with open(
         best_solution_path,
@@ -1118,7 +1154,7 @@ def run_deap_ga_optimisation(
     )
 
     # Save GA logbook
-    logbook_path = Path(f"results/GA_results/{season}_logbook.csv")
+    logbook_path = PROJECT_ROOT / "results" / "GA_results" / f"{season}_logbook.csv"
 
     pd.DataFrame(logbook).to_csv(
         logbook_path,
@@ -1150,3 +1186,10 @@ def run_deap_ga_optimisation(
             "hof": hof,
         },
     )
+
+
+if __name__ == "__main__":
+    from main import main
+
+    main()
+

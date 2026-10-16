@@ -1,8 +1,8 @@
-import sys
-import os
 import argparse
-import multiprocessing as mp
 import json
+import multiprocessing as mp
+import os
+import sys
 from datetime import datetime
 
 # Ensure Windows consoles encode UTF-8 (prevent MLflow emoji crashes)
@@ -12,8 +12,8 @@ if sys.platform == "win32":
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
 
-import mlflow
 import dagshub
+import mlflow
 
 try:
     from mpi4py import MPI
@@ -45,14 +45,12 @@ class StandaloneComm:
         return None
 
 
-from setup_custom_logger import setup_custom_logger
-
+from config import CONFIG
 from deap_ga_optimiser import (
     run_deap_ga_optimisation,
     worker_loop,
 )
-
-from config import CONFIG
+from setup_custom_logger import setup_custom_logger
 
 
 def parse_args():
@@ -117,6 +115,8 @@ def log_experiment_parameters(season, mpi_size):
             "design_upper_bounds": json.dumps(design["ub"]),
             "operational_lower_bounds": json.dumps(operational["lb"]),
             "operational_upper_bounds": json.dumps(operational["ub"]),
+            "electricity_min_price": CONFIG.get("min_price", 3.0),
+            "electricity_max_price": CONFIG.get("max_price", 8.0),
         }
     )
 

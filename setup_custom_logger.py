@@ -1,7 +1,7 @@
 import logging
-import sys
-import os
 import multiprocessing
+import os
+import sys
 from datetime import datetime
 
 # Terminal color codes
@@ -41,6 +41,8 @@ def setup_custom_logger(
     """
 
     # Race-safe directory creation
+    if not os.path.isabs(log_folder):
+        log_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), log_folder)
     os.makedirs(log_folder, exist_ok=True)
 
     # Configure logger for this rank process
