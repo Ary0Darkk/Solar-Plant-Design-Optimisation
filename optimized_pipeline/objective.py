@@ -48,4 +48,12 @@ def compute_daily_objective_value(
     )
     thermal_loss_cost = float(np.dot(thermal_losses, prices_24h) * np.float32(0.4))
 
-    return revenue - parasitic_cost - thermal_loss_cost
+    net_val = revenue - parasitic_cost - thermal_loss_cost
+
+    # Smart no-dispatch logic: on overcast days with zero electrical generation,
+    # plant operators keep collectors in standby rather than circulating HTF at a loss.
+    if float(np.sum(sim_slice.hourly_energy)) <= 0.0 and net_val < 0.0:
+        return 0.0
+
+    return net_val
+

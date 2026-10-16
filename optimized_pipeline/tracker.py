@@ -192,8 +192,9 @@ def plot_and_export(
     results_dir.mkdir(parents=True, exist_ok=True)
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Plot convergence
-    plot_path = plots_dir / f"{season}_convergence_{timestamp}.png"
+    # 1. Dual format plot export (300 DPI PNG + vector PDF)
+    plot_path_png = plots_dir / f"{season}_convergence_{timestamp}.png"
+    plot_path_pdf = plots_dir / f"{season}_convergence_{timestamp}.pdf"
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot(gens, max_fitness, label="Max Fitness", color="crimson", lw=2)
     ax.plot(gens, avg_fitness, label="Avg Fitness", color="navy", lw=1.5, ls="--")
@@ -203,23 +204,35 @@ def plot_and_export(
     ax.legend()
     ax.grid(True, linestyle=":", alpha=0.5)
     fig.tight_layout()
-    fig.savefig(plot_path, dpi=180)
+    fig.savefig(plot_path_png, dpi=300)
+    fig.savefig(plot_path_pdf)
     plt.close(fig)
 
     # 2. Results dictionary
     sol: Dict[str, Any] = {"season": season, "best_fitness": best_fitness}
+    design_dict: Dict[str, Any] = {}
     for i, name in enumerate(design_names):
         sol[f"design_{name}"] = best_ind[i]
+        design_dict[name] = best_ind[i]
 
     n_ops = len(operational_names)
+    ops_rows = []
     for day_info in season_days:
         l_idx = day_info["local_index"]
         d_lbl = f"day_{l_idx + 1:02d}_{day_info['month']:02d}_{day_info['day']:02d}"
+        row = {
+            "Day": l_idx + 1,
+            "Date": f"{day_info['month']:02d}-{day_info['day']:02d}",
+            "Day_Index": day_info["day_index"],
+        }
         for op_idx, name in enumerate(operational_names):
             gene_idx = len(design_names) + l_idx * n_ops + op_idx
-            sol[f"{d_lbl}_{name}"] = best_ind[gene_idx]
+            val = best_ind[gene_idx]
+            sol[f"{d_lbl}_{name}"] = val
+            row[name] = val
+        ops_rows.append(row)
 
-    # Save CSV & JSON
+    # 3. Save CSV & JSON
     csv_path = results_dir / f"{season}_{timestamp}.csv"
     pd.DataFrame([sol]).to_csv(csv_path, index=False)
 
@@ -227,18 +240,81 @@ def plot_and_export(
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump({"season": season, "fitness": best_fitness, "solution": sol}, f, indent=4)
 
-    # Save logbook
+    # 4. Save logbook CSV
     logbook_path = results_dir / f"{season}_logbook.csv"
-    pd.DataFrame(logbook).to_csv(logbook_path, index=False)
+    df_log = pd.DataFrame(logbook)
+    df_log.to_csv(logbook_path, index=False)
 
-    # Log to MLflow if active
+    # 5. Multi-sheet Excel workbook export
+    excel_path = results_dir / f"{season}_summary_{timestamp}.xlsx"
+    try:
+        with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+            pd.DataFrame([{"Property": k, "Value": v} for k, v in sol.items()]).to_excel(
+                writer, sheet_name="Optimal Solution", index=False
+            )
+            df_log.to_excel(writer, sheet_name="GA History", index=False)
+            pd.DataFrame(ops_rows).to_excel(writer, sheet_name="Operational Schedule", index=False)
+    except Exception as exc:
+        logger.warning("Could not export multi-sheet Excel summary: %s", exc)
+
+    # 6. Executive Markdown summary report
+    report_path = results_dir / f"{season}_executive_report_{timestamp}.md"
+    initial_fit = max_fitness[0] if max_fitness else best_fitness
+    fit_gain = best_fitness - initial_fit
+    report_lines = [
+        f"# CSP Genetic Algorithm Optimization Report — {season.capitalize()}",
+        f"",
+        f"- **Execution Timestamp**: `{timestamp}`",
+        f"- **Season**: `{season}`",
+        f"- **Final Best Fitness**: `{best_fitness:,.2f} INR`",
+        f"- **Initial Gen 0 Best**: `{initial_fit:,.2f} INR`",
+        f"- **Optimization Gain**: `+{fit_gain:,.2f} INR`",
+        f"- **Total Generations**: `{len(gens)}`",
+        f"",
+        f"## 1. Optimal Plant Design Parameters",
+        f"| Parameter | Value | Unit / Description |",
+        f"| :--- | :--- | :--- |",
+    ]
+    units_map = {
+        "specified_total_aperture": "m² (Solar field reflective area)",
+        "Row_Distance": "m (Collector row spacing pitch)",
+        "ColperSCA": "modules (Collector modules per SCA)",
+        "W_aperture": "m (Reflective aperture width)",
+        "L_SCA": "m (Collector assembly length)",
+    }
+    for k, v in design_dict.items():
+        desc = units_map.get(k, "")
+        report_lines.append(f"| `{k}` | **{v}** | {desc} |")
+
+    report_lines.extend([
+        f"",
+        f"## 2. Daily Operational Schedule (7 Representative Days)",
+        f"| Day | Date | Mass Flow Limit (kg/s) | Startup Temp (°C) | Shutdown Temp (°C) |",
+        f"| :--- | :--- | :--- | :--- | :--- |",
+    ])
+    for r in ops_rows:
+        report_lines.append(
+            f"| Day {r['Day']} | `{r['Date']}` | **{r.get('m_dot', '-')}** | "
+            f"**{r.get('T_startup', '-')}** | **{r.get('T_shutdown', '-')}** |"
+        )
+    report_lines.append("")
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(report_lines))
+
+    # 7. Log all artifacts to MLflow if active
     if mlflow.active_run():
         try:
             mlflow.log_artifact(str(csv_path), artifact_path="results")
             mlflow.log_artifact(str(json_path), artifact_path="results")
+            mlflow.log_artifact(str(report_path), artifact_path="results")
+            if excel_path.exists():
+                mlflow.log_artifact(str(excel_path), artifact_path="results")
             mlflow.log_artifact(str(logbook_path), artifact_path="ga_history")
-            if plot_path.exists():
-                mlflow.log_artifact(str(plot_path), artifact_path="plots")
+            if plot_path_png.exists():
+                mlflow.log_artifact(str(plot_path_png), artifact_path="plots")
+            if plot_path_pdf.exists():
+                mlflow.log_artifact(str(plot_path_pdf), artifact_path="plots")
         except Exception:
             pass
 
@@ -246,3 +322,4 @@ def plot_and_export(
     logger.info("\n%s\nOptimal Solution (%s):\n%s\n%s", "=" * 40, season, table_str, "=" * 40)
 
     return sol
+
