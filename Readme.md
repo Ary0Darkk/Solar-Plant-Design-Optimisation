@@ -45,32 +45,18 @@ flowchart TD
 
 ## Architecture
 
-  -----------------------------------------------------------------------
-  Area                                Responsibility
-  ----------------------------------- -----------------------------------
-  `main.py`                           CLI entry point, MPI setup, and run
-                                      orchestration
-
-  `config.py`                         GA settings, seasonal
-                                      representative days, bounds, and
-                                      simulation configuration
-
-  `simulation/`                       PySAM model setup, parameter
-                                      overrides, and output extraction
-
-  `optimisation/`                     GA, fitness evaluation, batching,
-                                      and MPI worker coordination
-
-  `utilities/`                        Logging and helper functions
-
-  `results/`, `checkpoints/`          Outputs and resumable GA state
-
-  PBS scripts                         HPC resource requests and seasonal
-                                      job submission
-  -----------------------------------------------------------------------
-
-*Directory names are logical roles; confirm exact paths against the
-current repository.*
+| Component / Module | Responsibility |
+| :--- | :--- |
+| `src/solar_opt/config/` | Typed configuration models, bounds, defaults, and legacy dictionary converter |
+| `src/solar_opt/simulation/` | PySAM `TroughPhysical` simulation engine, constraint validation, weather indexing |
+| `src/solar_opt/economic/` | Hourly electricity demand, dynamic tariff scaling, and daily revenue/loss objective |
+| `src/solar_opt/genetic/` | DEAP GA engine, chromosome initialization, integer mutation, and atomic checkpointing |
+| `src/solar_opt/parallel/` | MPI communicator abstraction (`Communicator`, `StandaloneComm`), batching & distribution |
+| `src/solar_opt/tracking/` | Synchronized multi-rank logging, DagsHub / MLflow tracking, and plot/CSV exports |
+| `src/solar_opt/cli.py` | Unified command-line interface (`solar-opt`) with argument parsing |
+| `tests/` | Comprehensive test suite covering config, weather, pricing, objective, GA, and PySAM |
+| `main.py` | Backward-compatible entrypoint forwarding to `solar_opt.cli.main()` |
+| PBS scripts (`*.pbs`) | Production HPC resource requests (single-season, 2-node, 7-node, 28-node, test) |
 
 ## Optimisation model
 
@@ -101,6 +87,14 @@ uv run python -c "import deap, mlflow, mpi4py, PySAM; print('Imports successful'
 Verify the cluster-supported MPI launcher separately. Installing
 `mpi4py` alone does not guarantee that `mpirun` or `mpiexec` is
 available.
+
+## Testing
+
+Run the full test suite with pytest:
+
+``` bash
+uv run pytest
+```
 
 ## Run
 

@@ -1,125 +1,20 @@
-from pathlib import Path
+"""
+Electricity demand and dynamic price module.
+Backward compatibility wrapper delegating to solar_opt.economic.
+"""
 
-import matplotlib.pyplot as plt
-import pandas as pd
-
-from config import CONFIG
-
-PROJECT_ROOT = Path(__file__).resolve().parent
-
-
-def format_data(file_path: str, show_demand_plot: bool):
-    p = Path(file_path)
-    if not p.is_absolute():
-        p = PROJECT_ROOT / p
-    df = pd.read_excel(p)
-
-    df_2020 = df[df["State"] == "Haryana - 2020"].copy()
-
-    df_2020["DateTime"] = pd.to_datetime(
-        "2020-" + df_2020["Date"], format="%Y-%d-%b %I%p"
-    )
-
-    # Create a boolean mask where Month is 2 (February) AND Day is 29.
-    is_leap_day = (df_2020["DateTime"].dt.month == 2) & (
-        df_2020["DateTime"].dt.day == 29
-    )
-
-    # Use the NOT operator (~) to keep all rows EXCEPT those that are the leap day.
-    df_2020_no_leap = df_2020[~is_leap_day].copy()
-
-    formatted_demand_df = df_2020_no_leap[
-        ["DateTime", "Hourly Demand Met (in MW)"]
-    ].reset_index(drop=True)
-
-    if show_demand_plot is True:
-        plt.figure(figsize=(12, 6))
-        plt.plot(
-            formatted_demand_df["DateTime"],
-            formatted_demand_df["Hourly Demand Met (in MW)"],
-        )
-        plt.xlabel("DateTime")
-        plt.ylabel("Hourly Demand Met (MW)")
-        plt.title("Hourly Demand Met Over Time")
-        plt.grid(True)
-        plt.show()
-
-    # print(max(formatted_demand_df['Hourly Demand Met (in MW)']))
-    # print(min(formatted_demand_df['Hourly Demand Met (in MW)']))
-
-    return formatted_demand_df
+from solar_opt.economic.pricing import (
+    compute_dynamic_tariff as calc_dynamic_price,
+    get_cached_dynamic_prices,
+    load_formatted_demand_data as format_data,
+)
 
 
-def calc_dynamic_price(
-    demand_data: pd.DataFrame,
-    min_price: float | None = None,
-    max_price: float | None = None,
-):
-    if min_price is None:
-        min_price = float(CONFIG.get("min_price", 3.0))
-    if max_price is None:
-        max_price = float(CONFIG.get("max_price", 8.0))
-
-    # define min and max of demand data
-    min_demand = demand_data.min()
-    max_demand = demand_data.max()
-
-    # calc price and demand range
-    price_range = max_price - min_price
-    demand_range = max_demand - min_demand
-
-    # maps price range to demand range (using min-max scaling)
-    dynamic_price = (
-        min_price + ((demand_data - min_demand) / demand_range) * price_range
-    )
-
-    dynamic_price_df = dynamic_price.clip(lower=min_price, upper=max_price)
-
-    return dynamic_price_df
+def get_dynamic_price(min_price=3.0, max_price=8.0):
+    formatted = format_data()
+    tariff = calc_dynamic_price(formatted["Hourly Demand Met (in MW)"], min_price, max_price)
+    formatted["dynamic_price"] = tariff
+    return formatted
 
 
-def get_dynamic_price(
-    min_price: float | None = None,
-    max_price: float | None = None,
-) -> pd.DataFrame:
-    formatted_data = format_data(
-        file_path=CONFIG["demand_file_path"],
-        show_demand_plot=CONFIG["show_demand_plot"],
-    )
-
-    demand_data = formatted_data["Hourly Demand Met (in MW)"]
-    dynamic_price_data = calc_dynamic_price(
-        demand_data=demand_data,
-        min_price=min_price,
-        max_price=max_price,
-    )
-
-    dynamic_price_data_df = dynamic_price_data.to_frame(name="dynamic_price")
-
-    final_dataset = pd.concat([formatted_data, dynamic_price_data_df], axis=1)
-
-    if CONFIG["show_price_plot"] is True:
-        plt.figure(figsize=(12, 6))
-        plt.plot(
-            final_dataset["DateTime"],
-            final_dataset["dynamic_price"],
-        )
-        plt.xlabel("DateTime")
-        plt.ylabel("Dynamic Price (INR/kWh)")
-        plt.title("Dynamic Price Over Time")
-        plt.grid(True)
-        plt.show()
-
-    return final_dataset
-
-
-def save_data():
-    final_dataset = get_dynamic_price()
-    out_path = PROJECT_ROOT / "electricity_data" / "dynamic_price_data_haryana.csv"
-    final_dataset.to_csv(out_path, index=False)
-    print(f"Saved dynamic price data ({len(final_dataset)} rows) to: {out_path}")
-    print(f"Price range: {final_dataset['dynamic_price'].min():.2f} - {final_dataset['dynamic_price'].max():.2f} INR/kWh")
-
-
-if __name__ == "__main__":
-    save_data()
+__all__ = ["format_data", "calc_dynamic_price", "get_dynamic_price", "get_cached_dynamic_prices"]

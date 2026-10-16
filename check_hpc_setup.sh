@@ -16,7 +16,7 @@ WARNINGS=0
 # 1. Clean line endings
 echo ""
 echo "[1/5] Checking line endings of PBS scripts..."
-for script in job2.pbs job7.pbs job28.pbs; do
+for script in *.pbs *.sh; do
     if [ -f "$script" ]; then
         # Automatically strip carriage returns
         if grep -q $'\r' "$script" 2>/dev/null || file "$script" 2>/dev/null | grep -q "CRLF"; then

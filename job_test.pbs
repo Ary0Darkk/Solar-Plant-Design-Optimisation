@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# =========================================================
+# PBS JOB CONFIGURATION - TEST RUN (1 Node, Fast Validation)
+# =========================================================
+
+#PBS -N NYS_PySAM_Test
+#PBS -q standard
+#PBS -l select=1:ncpus=16
+#PBS -l walltime=00:30:00
+#PBS -j oe
+#PBS -M 23b0343@iitb.ac.in
+#PBS -m abe
+
+# Ensure standard user tool paths are available
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+# =========================================================
+# MOVE TO PROJECT DIRECTORY
+# =========================================================
+
+cd "$PBS_O_WORKDIR" || exit 1
+
+mkdir -p logs results/GA_results checkpoints/GA
+
+echo "================================================="
+echo "NYS PySAM HPC Test Run (1 Node Validation)"
+echo "================================================="
+echo "Job ID       : $PBS_JOBID"
+echo "Job Name     : $PBS_JOBNAME"
+echo "Working Dir  : $PBS_O_WORKDIR"
+echo "Node File    : $PBS_NODEFILE"
+echo "Total CPUs   : $PBS_NCPUS"
+echo "================================================="
+
+SEASON="${SEASON:-winter}"
+echo "Selected Season: $SEASON"
+
+# =========================================================
+# DAGSHUB / MLFLOW AUTHENTICATION
+# =========================================================
+
+if [ -f "$HOME/.dagshub_token" ]; then
+    export MLFLOW_TRACKING_USERNAME="aryanvj787"
+    export MLFLOW_TRACKING_PASSWORD="$(cat "$HOME/.dagshub_token")"
+    export MLFLOW_TRACKING_URI="https://dagshub.com/aryanvj787/NYS-Design-Optimisation-using-PySAM.mlflow"
+    echo "MLflow/DagsHub authentication configured."
+else
+    echo "WARNING: $HOME/.dagshub_token not found."
+    echo "MLflow will use local file logging fallback."
+fi
+
+# =========================================================
+# PYTHON ENVIRONMENT
+# =========================================================
+
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+elif [ -f "$PBS_O_WORKDIR/.venv/bin/activate" ]; then
+    source "$PBS_O_WORKDIR/.venv/bin/activate"
+else
+    echo "ERROR: .venv/bin/activate not found in $PBS_O_WORKDIR."
+    echo "Ensure you installed dependencies with 'uv sync' or 'python -m venv .venv' on Linux."
+    exit 1
+fi
+
+echo "Python binary: $(which python)"
+python -c "import sys, deap, mpi4py, PySAM; print('Python & core packages verified:', sys.version.split()[0])" || {
+    echo "ERROR: Failed to import required python packages."
+    exit 1
+}
+
+# =========================================================
+# PARALLELISM CONTROL
+# =========================================================
+
+export APP_CPU_COUNT="$PBS_NCPUS"
+export LOCAL_WORKERS=16
+
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+echo ""
+echo "Running quick 2-individual, 2-generation test on 1 node..."
+echo "================================================="
+
+# =========================================================
+# RUN TEST (pop-size 4, 2 generations)
+# =========================================================
+
+python main.py \
+    --season "$SEASON" \
+    --pop-size 4 \
+    --generations 2
+
+EXIT_CODE=$?
+
+echo ""
+echo "================================================="
+echo "Test run finished with exit code: $EXIT_CODE"
+echo "================================================="
+
+exit "$EXIT_CODE"

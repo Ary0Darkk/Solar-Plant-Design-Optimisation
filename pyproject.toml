@@ -1,9 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "nys-design-optimisation-using-pysam"
-version = "0.1.0"
-description = "Add your description here"
+name = "solar-opt"
+version = "0.2.0"
+description = "Season-wise Concentrated Solar Power (CSP) genetic algorithm optimisation using PySAM and DEAP"
 readme = "README.md"
-requires-python =">=3.12"
+requires-python = ">=3.12"
 dependencies = [
     "dagshub>=0.6.3",
     "deap>=1.4.3",
@@ -12,6 +16,23 @@ dependencies = [
     "mpi4py>=4.1.2",
     "nrel-pysam>=7.1.0",
     "openpyxl>=3.1.5",
+    "pandas>=2.2.0",
     "ruff>=0.14.9",
     "tabulate>=0.9.0",
 ]
+
+[project.scripts]
+solar-opt = "solar_opt.cli:main"
+
+[dependency-groups]
+dev = [
+    "hatchling>=1.32.4",
+    "pytest>=9.1.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/solar_opt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
