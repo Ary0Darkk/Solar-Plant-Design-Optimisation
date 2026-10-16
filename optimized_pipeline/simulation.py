@@ -39,22 +39,23 @@ class DailySimulationSlice:
 def validate_constraints(overrides: Dict[str, Any]) -> bool:
     """
     Verify physical feasibility:
-    1. Geometric non-collision: Row_Distance > W_aperture
-    2. Operational temperature ordering: T_shutdown <= T_startup
+    1. Geometric clearance: Row_Distance - W_aperture >= 3.5 m (maintenance truck corridor)
+    2. Operational temperature deadband: T_startup - T_shutdown >= 15°C (anti-chattering hysteresis)
     """
     row_dist = overrides.get("Row_Distance")
     w_aperture = overrides.get("W_aperture")
     if row_dist is not None and w_aperture is not None:
-        if row_dist <= w_aperture:
+        if (row_dist - w_aperture) < 3.5:
             return False
 
     t_start = overrides.get("T_startup")
     t_shut = overrides.get("T_shutdown")
     if t_start is not None and t_shut is not None:
-        if t_shut > t_start:
+        if (t_start - t_shut) < 15:
             return False
 
     return True
+
 
 
 class CompactSimulator:

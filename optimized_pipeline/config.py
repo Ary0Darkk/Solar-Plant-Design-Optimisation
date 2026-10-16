@@ -84,6 +84,9 @@ class GAParameters:
     max_tasks_per_child: int = 25
     # Explicit garbage collection after each evaluation wave
     enable_gc_collection: bool = True
+    # Stop early if global best fitness fails to improve for N consecutive generations (0 = disabled)
+    early_stopping_patience: int = 15
+
 
 
 @dataclass

@@ -230,6 +230,8 @@ def run_optimization(
     total_successful = 0
     total_penalized = 0
     best_fitness_ever = -float("inf")
+    stagnant_generations = 0
+
 
     if cp is not None:
         logger.info("Resuming from compressed checkpoint at gen %d", cp["generation"])
@@ -346,8 +348,16 @@ def run_optimization(
         is_global_best = current_best > best_fitness_ever
         if is_global_best:
             best_fitness_ever = current_best
+            stagnant_generations = 0
+        else:
+            stagnant_generations += 1
+
+        if ga.early_stopping_patience > 0 and stagnant_generations >= ga.early_stopping_patience:
+            logger.info("Early stopping triggered: no fitness improvement for %d consecutive generations.", stagnant_generations)
+            break
 
         if gen % ga.checkpoint_interval == 0 or gen == num_generations - 1 or is_global_best:
+
             payload = {
                 "season": season,
                 "ckpt_key": ckpt_sig,

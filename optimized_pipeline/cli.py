@@ -65,11 +65,24 @@ def parse_arguments(argv=None):
         help="Random seed for reproducibility",
     )
     parser.add_argument(
+        "--min-price",
+        type=float,
+        default=None,
+        help="Minimum electricity tariff in INR/kWh (default: 3.0)",
+    )
+    parser.add_argument(
+        "--max-price",
+        type=float,
+        default=None,
+        help="Maximum electricity tariff in INR/kWh (default: 8.0)",
+    )
+    parser.add_argument(
         "--no-tracking",
         action="store_true",
         help="Disable remote DagsHub/MLflow experiment tracking",
     )
     return parser.parse_args(argv)
+
 
 
 def main(argv=None):
@@ -85,6 +98,11 @@ def main(argv=None):
         config.ga.max_tasks_per_child = args.max_tasks_per_child
     if args.seed is not None:
         config.ga.random_seed = args.seed
+    if args.min_price is not None:
+        config.tariff.min_price = args.min_price
+    if args.max_price is not None:
+        config.tariff.max_price = args.max_price
+
 
     workers = args.workers
     if workers is None:
