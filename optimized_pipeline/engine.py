@@ -14,7 +14,7 @@ from deap import algorithms, base, creator, tools
 
 from .checkpoint import (
     compute_signature,
-    load_compressed_checkpoint,
+    find_compatible_checkpoint,
     save_compressed_checkpoint,
 )
 from .chromosome import (
@@ -256,7 +256,10 @@ def run_optimization(
 
     cp = None
     if ga.resume_from_checkpoint:
-        cp = load_compressed_checkpoint(latest_ckpt_file, ckpt_sig, pop_size, chromosome_len)
+        season_ckpt_dir = PROJECT_ROOT / "checkpoints" / "GA_optimized" / season
+        found = find_compatible_checkpoint(season_ckpt_dir, ckpt_sig, pop_size, chromosome_len)
+        if found is not None:
+            latest_ckpt_file, cp = found
 
     total_successful = 0
     total_penalized = 0
@@ -268,6 +271,7 @@ def run_optimization(
         total_successful = cp.get("total_successful", 0)
         total_penalized = cp.get("total_penalized", 0)
         best_fitness_ever = cp.get("best_fitness_ever", -float("inf"))
+        stagnant_generations = cp.get("stagnant_generations", 0)
         random.setstate(cp["rndstate"])
         np.random.set_state(cp["np_rndstate"])
         pop = deserialize_pop(cp["pop"], toolbox)
@@ -375,6 +379,7 @@ def run_optimization(
                 "np_rndstate": np.random.get_state(),
                 "total_successful": total_successful,
                 "total_penalized": total_penalized,
+                "stagnant_generations": stagnant_generations,
             }
             save_compressed_checkpoint(payload, latest_ckpt_file)
             save_compressed_checkpoint(payload, ckpt_dir / "checkpoint_gen_0.pkl.gz")
@@ -451,6 +456,7 @@ def run_optimization(
                 "np_rndstate": np.random.get_state(),
                 "total_successful": total_successful,
                 "total_penalized": total_penalized,
+                "stagnant_generations": stagnant_generations,
             }
             save_compressed_checkpoint(payload, latest_ckpt_file)
             save_compressed_checkpoint(payload, ckpt_dir / f"checkpoint_gen_{gen}.pkl.gz")

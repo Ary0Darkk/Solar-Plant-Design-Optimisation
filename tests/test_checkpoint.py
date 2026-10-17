@@ -78,3 +78,60 @@ def test_load_signature_mismatch(tmp_path: Path):
         file_path, expected_key="wrong_key", pop_size=10, chromosome_len=20
     )
     assert loaded is None
+
+
+def test_generation_invariant_signature():
+    """Verify that compute_signature is invariant to num_generations by default."""
+    sig_10 = compute_signature(
+        season="winter",
+        design_names=DESIGN_BOUNDS.names,
+        operational_names=OPERATIONAL_BOUNDS.names,
+        design_lb=DESIGN_BOUNDS.lb,
+        design_ub=DESIGN_BOUNDS.ub,
+        operational_lb=OPERATIONAL_BOUNDS.lb,
+        operational_ub=OPERATIONAL_BOUNDS.ub,
+        pop_size=112,
+        num_generations=10,
+    )
+    sig_100 = compute_signature(
+        season="winter",
+        design_names=DESIGN_BOUNDS.names,
+        operational_names=OPERATIONAL_BOUNDS.names,
+        design_lb=DESIGN_BOUNDS.lb,
+        design_ub=DESIGN_BOUNDS.ub,
+        operational_lb=OPERATIONAL_BOUNDS.lb,
+        operational_ub=OPERATIONAL_BOUNDS.ub,
+        pop_size=112,
+        num_generations=100,
+    )
+    assert sig_10 == sig_100
+
+
+def test_find_compatible_checkpoint(tmp_path: Path):
+    """Verify find_compatible_checkpoint locates newest compatible checkpoint across folders."""
+    from optimized_pipeline.checkpoint import find_compatible_checkpoint
+
+    season_dir = tmp_path / "checkpoints" / "winter"
+    run_dir1 = season_dir / "hash_old"
+    season_dir / "hash_new"
+
+    # Save checkpoint in older folder
+    data1 = {
+        "generation": 3,
+        "ckpt_key": "hash_old",
+        "pop": [([1, 2], (10.0,)), ([3, 4], (20.0,))],
+        "stagnant_generations": 2,
+    }
+    save_compressed_checkpoint(data1, run_dir1 / "checkpoint_latest.pkl.gz")
+
+    found = find_compatible_checkpoint(
+        season_dir=season_dir,
+        expected_key="hash_target",
+        pop_size=2,
+        chromosome_len=2,
+    )
+    assert found is not None
+    ckpt_path, loaded_data = found
+    assert loaded_data["generation"] == 3
+    assert loaded_data["stagnant_generations"] == 2
+    assert ckpt_path == run_dir1 / "checkpoint_latest.pkl.gz"
