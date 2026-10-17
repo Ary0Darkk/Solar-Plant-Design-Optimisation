@@ -104,3 +104,26 @@ def test_resolve_worker_count_logic(monkeypatch):
     # 4. Custom LOCAL_WORKERS on HPC cluster
     monkeypatch.setenv("LOCAL_WORKERS", "128")
     assert resolve_worker_count(None) == 128
+
+
+def test_cli_worker_rank_passes_logger(monkeypatch):
+    """Verify that cli.main initializes logger and passes it to worker_event_loop on worker rank."""
+    from unittest.mock import MagicMock
+
+    from optimized_pipeline.cli import main
+
+    mock_comm = MagicMock()
+    mock_comm.Get_rank.return_value = 1
+    mock_comm.Get_size.return_value = 2
+    mock_comm.bcast.return_value = "2026-10-18_12-00-00"
+
+    mock_worker_loop = MagicMock()
+    monkeypatch.setattr("optimized_pipeline.cli.get_communicator", lambda: mock_comm)
+    monkeypatch.setattr("optimized_pipeline.cli.worker_event_loop", mock_worker_loop)
+
+    main(["--season", "winter"])
+
+    mock_worker_loop.assert_called_once()
+    assert mock_worker_loop.call_args.kwargs["rank"] == 1
+    assert mock_worker_loop.call_args.kwargs["custom_logger"] is not None
+

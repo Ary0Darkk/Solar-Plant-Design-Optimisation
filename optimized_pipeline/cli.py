@@ -276,6 +276,7 @@ def main(argv=None):
                             rank=rank,
                             mpi_size=size,
                             job_id=job_id,
+                            custom_logger=logger,
                         )
                 finally:
                     # Notify remote MPI ranks to stop
@@ -297,6 +298,7 @@ def main(argv=None):
                         rank=rank,
                         mpi_size=size,
                         job_id=job_id,
+                        custom_logger=logger,
                     )
             finally:
                 for w in range(1, size):
@@ -313,6 +315,7 @@ def main(argv=None):
             rank=rank,
             config=config,
             workers=workers,
+            custom_logger=logger,
         )
 
     logger.info("Optimized Pipeline Run Completed successfully!")

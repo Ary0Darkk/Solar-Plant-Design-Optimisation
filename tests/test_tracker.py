@@ -18,6 +18,42 @@ def test_setup_logger(tmp_path: Path):
     assert (log_dir / "opt_2026-10-17_00-00-00_rank_0.log").exists()
 
 
+def test_setup_logger_worker_nodes_different_files_same_initialization(tmp_path: Path):
+    """Verify that worker nodes get distinct log files using the same logger initialization."""
+    log_dir = tmp_path / "test_logs_cluster"
+    ts = "2026-10-18_12-00-00"
+
+    # Master node (rank 0)
+    master_logger = setup_logger(rank=0, timestamp=ts, log_dir=log_dir)
+    # Worker nodes (rank 1, rank 2)
+    worker1_logger = setup_logger(rank=1, timestamp=ts, log_dir=log_dir)
+    worker2_logger = setup_logger(rank=2, timestamp=ts, log_dir=log_dir)
+
+    assert (log_dir / f"opt_{ts}_rank_0.log").exists()
+    assert (log_dir / f"opt_{ts}_rank_1.log").exists()
+    assert (log_dir / f"opt_{ts}_rank_2.log").exists()
+
+    # Log messages from each
+    master_logger.info("Message from Master")
+    worker1_logger.info("Message from Worker 1")
+    worker2_logger.info("Message from Worker 2")
+
+    with open(log_dir / f"opt_{ts}_rank_0.log", encoding="utf-8") as f:
+        content_0 = f.read()
+        assert "Message from Master" in content_0
+        assert "Message from Worker 1" not in content_0
+
+    with open(log_dir / f"opt_{ts}_rank_1.log", encoding="utf-8") as f:
+        content_1 = f.read()
+        assert "Message from Worker 1" in content_1
+        assert "Message from Master" not in content_1
+
+    with open(log_dir / f"opt_{ts}_rank_2.log", encoding="utf-8") as f:
+        content_2 = f.read()
+        assert "Message from Worker 2" in content_2
+        assert "Message from Worker 1" not in content_2
+
+
 def test_plot_and_export_artifacts(tmp_path: Path, monkeypatch):
     """Verify that plot_and_export creates PNG, PDF, Excel, JSON, CSV, and Markdown report."""
     # Temporarily redirect PROJECT_ROOT inside tracker module to tmp_path

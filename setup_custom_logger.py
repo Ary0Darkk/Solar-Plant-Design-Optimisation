@@ -38,10 +38,12 @@ def setup_custom_logger(
         Optional synchronized timestamp string.
     """
     folder = Path(log_folder) if os.path.isabs(log_folder) else (PROJECT_ROOT / log_folder)
+    log_file_path = Path(existing_file) if existing_file else None
     return setup_logger(
         rank=rank,
         timestamp=timestamp,
         log_dir=folder,
+        log_file=log_file_path,
         name=name,
         propagate=True,
         use_stdout=True,

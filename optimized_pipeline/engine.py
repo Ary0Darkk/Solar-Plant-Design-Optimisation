@@ -29,7 +29,7 @@ from .operators import build_bounded_mutation
 from .parallel import Communicator, partition_batches
 from .simulation import get_simulator
 from .tariff import get_shared_tariff
-from .tracker import log_step_metrics, plot_and_export
+from .tracker import log_step_metrics, plot_and_export, setup_logger
 from .weather import get_season_days
 
 logger = logging.getLogger("NYS_Optimisation")
@@ -65,10 +65,12 @@ def evaluate_batch_memory_optimized(
     season: str,
     config: PipelineConfig,
     rank: int = 0,
+    custom_logger: Optional[logging.Logger] = None,
 ) -> Tuple[List[Any], Dict[str, int]]:
     """
     Evaluate batch using streaming imap_unordered to minimize memory retention.
     """
+    active_logger = custom_logger or logger
     season_days = get_season_days(season, config.seasons)
     num_days = len(season_days)
     n_design = len(config.design.names)
@@ -84,7 +86,6 @@ def evaluate_batch_memory_optimized(
             overrides = {**design_dict, **op_dict}
             tasks.append((ind_idx, l_idx, overrides, day_info["day_index"]))
 
-    # Stream task results generator
     # Stream task results generator with low chunksize for immediate responsive streaming
     chunksize = min(4, max(1, len(tasks) // (getattr(pool, "_processes", 4) * 4)))
     results_by_ind: Dict[int, List[Tuple[int, Optional[float], bool]]] = {
@@ -100,7 +101,7 @@ def evaluate_batch_memory_optimized(
         results_by_ind[ind_idx].append((l_idx, obj, pen))
         done_tasks += 1
         if done_tasks == 1 or done_tasks % log_interval == 0 or done_tasks == total_tasks:
-            logger.info(
+            active_logger.info(
                 "[Rank %d] Simulation progress: %d/%d tasks evaluated (%.1f%%)",
                 rank,
                 done_tasks,
@@ -145,6 +146,7 @@ def worker_event_loop(
     config: PipelineConfig,
     workers: int = 4,
     pool: Optional[Any] = None,
+    custom_logger: Optional[logging.Logger] = None,
 ) -> None:
     """Worker loop listening for batches from Master Rank 0."""
     if rank == 0:
@@ -152,6 +154,15 @@ def worker_event_loop(
             "Rank 0 is designated as Master Rank and cannot run worker_event_loop. "
             "Only worker ranks (rank > 0) can run worker_event_loop."
         )
+
+    global logger
+    if custom_logger is not None:
+        logger = custom_logger
+        for h in custom_logger.handlers:
+            if h not in logger.handlers:
+                logger.addHandler(h)
+    elif len(logger.handlers) == 0:
+        logger = setup_logger(rank=rank)
 
     logger.info("[Rank %d: Worker] Worker loop active | Season: %s", rank, season)
 
@@ -167,6 +178,7 @@ def worker_event_loop(
                 season=season,
                 config=config,
                 rank=rank,
+                custom_logger=logger,
             )
             comm.send((eval_b, stats), dest=0, tag=0)
 
@@ -325,7 +337,9 @@ def run_optimization(
 
         if mpi_size <= 1:
             for b in batches:
-                eval_b, b_stats = evaluate_batch_memory_optimized(b, pool, season, config, rank)
+                eval_b, b_stats = evaluate_batch_memory_optimized(
+                    b, pool, season, config, rank, custom_logger=logger
+                )
                 evaluated_all.extend(eval_b)
                 wave_succ += b_stats["successful"]
                 wave_pen += b_stats["penalized"]
@@ -342,7 +356,7 @@ def run_optimization(
 
             while b_idx < len(batches):
                 eval_b, b_stats = evaluate_batch_memory_optimized(
-                    batches[b_idx], pool, season, config, rank
+                    batches[b_idx], pool, season, config, rank, custom_logger=logger
                 )
                 evaluated_all.extend(eval_b)
                 wave_succ += b_stats["successful"]

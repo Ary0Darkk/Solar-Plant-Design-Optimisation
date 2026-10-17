@@ -88,4 +88,5 @@ def test_deap_ga_optimiser_worker_rank_event_loop(monkeypatch):
     mock_run_opt.assert_not_called()
     mock_worker_loop.assert_called_once()
     assert mock_worker_loop.call_args.kwargs["rank"] == 2
+    assert mock_worker_loop.call_args.kwargs["custom_logger"] is not None
 

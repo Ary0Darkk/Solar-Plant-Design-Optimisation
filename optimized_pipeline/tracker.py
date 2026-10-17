@@ -67,6 +67,7 @@ def setup_logger(
     rank: int = 0,
     timestamp: Optional[str] = None,
     log_dir: Optional[Path] = None,
+    log_file: Optional[Path] = None,
     name: str = "NYS_Optimisation",
     propagate: bool = True,
     use_stdout: bool = True,
@@ -78,7 +79,8 @@ def setup_logger(
     folder = log_dir or (PROJECT_ROOT / "logs")
     folder.mkdir(parents=True, exist_ok=True)
 
-    log = logging.getLogger(name)
+    logger_name = f"{name}_rank_{rank}" if rank != 0 else name
+    log = logging.getLogger(logger_name)
     log.setLevel(logging.INFO)
     log.propagate = propagate
 
@@ -90,8 +92,11 @@ def setup_logger(
             pass
     log.handlers.clear()
 
-    ts = timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    file_path = folder / f"opt_{ts}_rank_{rank}.log"
+    if isinstance(timestamp, str) and timestamp.strip():
+        ts = timestamp
+    else:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_path = log_file or (folder / f"opt_{ts}_rank_{rank}.log")
 
     f_format = logging.Formatter(
         "%(asctime)s | PID:%(process)-5d | %(levelname)-8s | %(filename)s:%(lineno)d | %(message)s"
@@ -101,13 +106,20 @@ def setup_logger(
     fh.setFormatter(f_format)
     log.addHandler(fh)
 
-    if rank == 0:
-        stream = sys.stdout if use_stdout else sys.stderr
+    if use_stdout:
+        stream = sys.stdout
         ch = FlushingStreamHandler(stream)
         ch.setLevel(logging.INFO)
-        ch.setFormatter(
-            ColoredFormatter("%(asctime)s | PID:%(process)-5d | %(levelname)-8s | %(message)s")
-        )
+        if rank == 0:
+            ch.setFormatter(
+                ColoredFormatter("%(asctime)s | PID:%(process)-5d | %(levelname)-8s | %(message)s")
+            )
+        else:
+            ch.setFormatter(
+                ColoredFormatter(
+                    f"%(asctime)s | PID:%(process)-5d | [Rank {rank}] | %(levelname)-8s | %(message)s"
+                )
+            )
         log.addHandler(ch)
 
     return log

@@ -9,6 +9,7 @@ Usage:
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 from config import CONFIG
@@ -56,7 +57,16 @@ def run_deap_ga_optimisation(
     effective_size = mpi_size if mpi_size > 1 else active_comm.Get_size()
     workers = resolve_worker_count(kwargs.get("workers"))
 
-    active_logger = logger or setup_logger(rank=effective_rank)
+    # Synchronize timestamp across MPI ranks from Rank 0
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") if effective_rank == 0 else None
+    if effective_size > 1:
+        synced_ts = active_comm.bcast(ts, root=0)
+        if isinstance(synced_ts, str) and synced_ts.strip():
+            ts = synced_ts
+    if not isinstance(ts, str) or not ts.strip():
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    active_logger = logger or setup_logger(rank=effective_rank, timestamp=ts)
 
     if effective_rank == 0:
         # Master Rank
@@ -106,6 +116,7 @@ def run_deap_ga_optimisation(
             config=cfg,
             workers=workers,
             pool=local_pool,
+            custom_logger=active_logger,
         )
         return {}, 0.0, {}
 
