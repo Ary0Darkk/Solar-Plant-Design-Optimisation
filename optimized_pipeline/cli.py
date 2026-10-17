@@ -7,6 +7,7 @@ import multiprocessing as mp
 import os
 import sys
 from datetime import datetime
+from typing import Optional
 
 import mlflow
 
@@ -50,7 +51,7 @@ def parse_arguments(argv=None):
         "--workers",
         type=int,
         default=None,
-        help="Worker processes per rank (default: from LOCAL_WORKERS or 4)",
+        help="Worker processes per rank (default: 112 on HPC / LOCAL_WORKERS, fallback to 4 on local machine)",
     )
     parser.add_argument(
         "--max-tasks-per-child",
@@ -88,6 +89,30 @@ def parse_arguments(argv=None):
         help="Disable remote DagsHub/MLflow experiment tracking",
     )
     return parser.parse_args(argv)
+
+
+def resolve_worker_count(args_workers: Optional[int] = None) -> int:
+    """
+    Resolve number of multiprocessing workers per rank.
+
+    Defaults to 112 (or LOCAL_WORKERS environment variable), but safely falls
+    back to 4 (or available CPU count) when executed on a local workstation
+    without an active HPC scheduler (PBS/Slurm).
+    """
+    if args_workers is not None:
+        return max(1, args_workers)
+
+    target_workers = int(os.environ.get("LOCAL_WORKERS", "112"))
+    is_hpc = bool(
+        os.environ.get("PBS_JOBID") or os.environ.get("SLURM_JOB_ID") or os.environ.get("JOB_ID")
+    )
+    cpu_count = os.cpu_count() or 4
+
+    # Fall back to 4 if running on local device without HPC scheduler
+    if not is_hpc:
+        return min(4, cpu_count)
+
+    return target_workers
 
 
 def collect_run_tags(args, rank: int, size: int, workers: int) -> dict:
@@ -165,9 +190,7 @@ def main(argv=None):
     if args.max_price is not None:
         config.tariff.max_price = args.max_price
 
-    workers = args.workers
-    if workers is None:
-        workers = int(os.environ.get("LOCAL_WORKERS", "4"))
+    workers = resolve_worker_count(args.workers)
 
     comm = get_communicator()
     rank = comm.Get_rank()
@@ -192,6 +215,18 @@ def main(argv=None):
         rank,
         size,
     )
+
+    is_hpc = bool(
+        os.environ.get("PBS_JOBID") or os.environ.get("SLURM_JOB_ID") or os.environ.get("JOB_ID")
+    )
+    target_env = int(os.environ.get("LOCAL_WORKERS", "112"))
+    if args.workers is None and not is_hpc and target_env > workers:
+        logger.info(
+            "Local device detected (no HPC scheduler). Safe fallback: using %d workers (target was %d).",
+            workers,
+            target_env,
+        )
+
     logger.info(
         "Scheduler Job ID: %s | Queue: %s | Host: %s",
         job_id,

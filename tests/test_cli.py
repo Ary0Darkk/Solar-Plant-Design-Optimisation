@@ -80,3 +80,27 @@ def test_collect_run_tags_with_job_id(monkeypatch):
     assert tags_env["job_id"] == "12345.headnode"
     assert tags_env["queue"] == "standard"
     assert tags_env["scheduler"] == "PBS"
+
+
+def test_resolve_worker_count_logic(monkeypatch):
+    """Verify that worker resolution targets 112 on HPC and falls back to 4 on local workstations."""
+    from optimized_pipeline.cli import resolve_worker_count
+
+    # 1. Explicit CLI argument takes precedence
+    assert resolve_worker_count(8) == 8
+    assert resolve_worker_count(16) == 16
+
+    # 2. On local machine without HPC scheduler, falls back to 4 even if LOCAL_WORKERS=112
+    monkeypatch.delenv("PBS_JOBID", raising=False)
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.delenv("JOB_ID", raising=False)
+    monkeypatch.setenv("LOCAL_WORKERS", "112")
+    assert resolve_worker_count(None) == 4
+
+    # 3. On HPC cluster (PBS Pro / Slurm), targets 112 (or LOCAL_WORKERS)
+    monkeypatch.setenv("PBS_JOBID", "9999.headnode")
+    assert resolve_worker_count(None) == 112
+
+    # 4. Custom LOCAL_WORKERS on HPC cluster
+    monkeypatch.setenv("LOCAL_WORKERS", "128")
+    assert resolve_worker_count(None) == 128
