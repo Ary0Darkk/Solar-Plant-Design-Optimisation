@@ -118,3 +118,43 @@ def test_evaluate_batch_memory_optimized_pool():
     assert hasattr(evaluated_pop[0], "fitness")
     assert len(evaluated_pop[0].fitness.values) == 1
     assert stats["total"] == 7
+
+
+def test_run_optimization_requires_rank_zero():
+    """Verify that run_optimization raises ValueError if called with rank != 0."""
+    from unittest.mock import MagicMock
+
+    from optimized_pipeline.engine import run_optimization
+
+    config = get_pipeline_config()
+    mock_comm = MagicMock()
+    mock_pool = MagicMock()
+
+    with pytest.raises(ValueError, match="0th rank must be the master rank"):
+        run_optimization(
+            season="winter",
+            config=config,
+            pool=mock_pool,
+            comm=mock_comm,
+            rank=1,
+            mpi_size=2,
+        )
+
+
+def test_worker_event_loop_rejects_rank_zero():
+    """Verify that worker_event_loop raises ValueError if called with rank == 0."""
+    from unittest.mock import MagicMock
+
+    from optimized_pipeline.engine import worker_event_loop
+
+    config = get_pipeline_config()
+    mock_comm = MagicMock()
+
+    with pytest.raises(ValueError, match="Rank 0 is designated as Master Rank"):
+        worker_event_loop(
+            season="winter",
+            comm=mock_comm,
+            rank=0,
+            config=config,
+        )
+

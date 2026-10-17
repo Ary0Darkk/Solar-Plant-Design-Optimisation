@@ -144,32 +144,45 @@ def worker_event_loop(
     rank: int,
     config: PipelineConfig,
     workers: int = 4,
+    pool: Optional[Any] = None,
 ) -> None:
     """Worker loop listening for batches from Master Rank 0."""
-    logger.info("[Rank %d] Worker loop active | Season: %s", rank, season)
-    ctx = mp.get_context()
+    if rank == 0:
+        raise ValueError(
+            "Rank 0 is designated as Master Rank and cannot run worker_event_loop. "
+            "Only worker ranks (rank > 0) can run worker_event_loop."
+        )
 
-    with ctx.Pool(processes=workers, maxtasksperchild=config.ga.max_tasks_per_child) as pool:
-        try:
-            while True:
-                batch = comm.recv(source=0, tag=0)
-                if batch is None:
-                    break
+    logger.info("[Rank %d: Worker] Worker loop active | Season: %s", rank, season)
 
-                eval_b, stats = evaluate_batch_memory_optimized(
-                    batch=batch,
-                    pool=pool,
-                    season=season,
-                    config=config,
-                    rank=rank,
-                )
-                comm.send((eval_b, stats), dest=0, tag=0)
+    def _listen(p: Any) -> None:
+        while True:
+            batch = comm.recv(source=0, tag=0)
+            if batch is None:
+                break
 
-                # Explicit wave garbage collection
-                if config.ga.enable_gc_collection:
-                    gc.collect()
-        finally:
-            logger.info("[Rank %d] Worker loop shutdown.", rank)
+            eval_b, stats = evaluate_batch_memory_optimized(
+                batch=batch,
+                pool=p,
+                season=season,
+                config=config,
+                rank=rank,
+            )
+            comm.send((eval_b, stats), dest=0, tag=0)
+
+            # Explicit wave garbage collection
+            if config.ga.enable_gc_collection:
+                gc.collect()
+
+    try:
+        if pool is not None:
+            _listen(pool)
+        else:
+            ctx = mp.get_context()
+            with ctx.Pool(processes=workers, maxtasksperchild=config.ga.max_tasks_per_child) as p:
+                _listen(p)
+    finally:
+        logger.info("[Rank %d: Worker] Worker loop shutdown.", rank)
 
 
 def run_optimization(
@@ -183,6 +196,12 @@ def run_optimization(
     custom_logger: Optional[logging.Logger] = None,
 ) -> Tuple[Dict[str, Any], float, Dict[str, Any]]:
     """Master optimization orchestration loop with memory recycling."""
+    if rank != 0:
+        raise ValueError(
+            f"0th rank must be the master rank. Received rank={rank}. "
+            "Worker ranks (rank > 0) must run worker_event_loop instead of run_optimization."
+        )
+
     global logger
     if custom_logger is not None:
         logger = custom_logger
@@ -190,6 +209,7 @@ def run_optimization(
             if h not in logger.handlers:
                 logger.addHandler(h)
 
+    logger.info("[Rank 0: Master] Starting Master GA optimization loop...")
     init_deap_types()
     season_days = get_season_days(season, config.seasons)
     num_days = len(season_days)

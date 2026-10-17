@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Tuple
 from config import CONFIG
 from optimized_pipeline.cli import main, parse_arguments
 from optimized_pipeline.config import PipelineConfig, get_pipeline_config
-from optimized_pipeline.engine import run_optimization
+from optimized_pipeline.engine import run_optimization, worker_event_loop
 from optimized_pipeline.parallel import Communicator, get_communicator
 from optimized_pipeline.tracker import setup_logger
 from optimized_pipeline.weather import get_season_days
@@ -35,7 +35,10 @@ def run_deap_ga_optimisation(
     """
     Run Genetic Algorithm optimization for the specified season.
 
-    Backward-compatible wrapper around `optimized_pipeline.engine.run_optimization`.
+    Rank 0 acts as the Master Rank, coordinating the DEAP GA loop and dispatching
+    evaluation batches. Ranks > 0 act as Worker Ranks running the worker event loop.
+
+    Backward-compatible wrapper around `optimized_pipeline.engine`.
     """
     cfg = config or get_pipeline_config()
 
@@ -48,35 +51,63 @@ def run_deap_ga_optimisation(
 
     from optimized_pipeline.cli import resolve_worker_count
 
-    active_comm: Optional[Communicator] = comm
-    if active_comm is None:
-        active_comm = get_communicator()
+    active_comm: Communicator = comm if comm is not None else get_communicator()
+    effective_rank = rank if rank != 0 else active_comm.Get_rank()
+    effective_size = mpi_size if mpi_size > 1 else active_comm.Get_size()
+    workers = resolve_worker_count(kwargs.get("workers"))
 
-    active_logger = logger or setup_logger(rank=rank)
+    active_logger = logger or setup_logger(rank=effective_rank)
 
-    if local_pool is not None:
-        return run_optimization(
-            season=season,
-            config=cfg,
-            pool=local_pool,
-            comm=active_comm,
-            rank=rank,
-            mpi_size=mpi_size,
-            custom_logger=active_logger,
+    if effective_rank == 0:
+        # Master Rank
+        active_logger.info(
+            "[Rank 0: Master] Running GA optimization as Master Rank (mpi_size=%d)...",
+            effective_size,
         )
+        try:
+            if local_pool is not None:
+                return run_optimization(
+                    season=season,
+                    config=cfg,
+                    pool=local_pool,
+                    comm=active_comm,
+                    rank=0,
+                    mpi_size=effective_size,
+                    custom_logger=active_logger,
+                )
+            else:
+                ctx = mp.get_context()
+                with ctx.Pool(
+                    processes=workers, maxtasksperchild=cfg.ga.max_tasks_per_child
+                ) as pool:
+                    return run_optimization(
+                        season=season,
+                        config=cfg,
+                        pool=pool,
+                        comm=active_comm,
+                        rank=0,
+                        mpi_size=effective_size,
+                        custom_logger=active_logger,
+                    )
+        finally:
+            if effective_size > 1:
+                for w in range(1, effective_size):
+                    active_comm.send(None, dest=w, tag=0)
     else:
-        workers = resolve_worker_count(kwargs.get("workers"))
-        ctx = mp.get_context()
-        with ctx.Pool(processes=workers, maxtasksperchild=cfg.ga.max_tasks_per_child) as pool:
-            return run_optimization(
-                season=season,
-                config=cfg,
-                pool=pool,
-                comm=active_comm,
-                rank=rank,
-                mpi_size=mpi_size,
-                custom_logger=active_logger,
-            )
+        # Worker Rank
+        active_logger.info(
+            "[Rank %d: Worker] Running worker event loop (listening to Master Rank 0)...",
+            effective_rank,
+        )
+        worker_event_loop(
+            season=season,
+            comm=active_comm,
+            rank=effective_rank,
+            config=cfg,
+            workers=workers,
+            pool=local_pool,
+        )
+        return {}, 0.0, {}
 
 
 __all__ = [

@@ -206,14 +206,16 @@ def main(argv=None):
 
     logger.info("=" * 60)
     logger.info("Concentrated Solar Power (CSP) Genetic Algorithm Optimization")
+    role_str = "Master" if rank == 0 else f"Worker {rank}"
     logger.info(
-        "Season: %s | Pop: %d | Gens: %d | Workers: %d | Rank: %d/%d",
+        "Season: %s | Pop: %d | Gens: %d | Workers: %d | Rank: %d/%d (%s)",
         args.season,
         config.ga.pop_size,
         config.ga.num_generations,
         workers,
         rank,
         size,
+        role_str,
     )
 
     is_hpc = bool(
@@ -239,6 +241,7 @@ def main(argv=None):
     logger.info("=" * 60)
 
     if rank == 0:
+        logger.info("[Rank 0: Master] Initializing Master GA optimization...")
         if not args.no_tracking:
             init_tracking()
 
@@ -301,6 +304,9 @@ def main(argv=None):
 
     else:
         # Worker ranks
+        logger.info(
+            "[Rank %d: Worker] Entering worker event loop (listening to Master Rank 0)...", rank
+        )
         worker_event_loop(
             season=args.season,
             comm=comm,
