@@ -113,3 +113,26 @@ def test_init_tracking_local_fallback(tmp_path: Path, monkeypatch):
     assert uri.startswith("sqlite:///")
     assert "mlflow.db" in uri
     assert (tmp_path / "results" / "mlflow.db").exists()
+
+
+def test_setup_custom_logger_and_flush(tmp_path: Path):
+    """Verify setup_custom_logger emits logs immediately and flushes to disk with 0 delay."""
+    from setup_custom_logger import setup_custom_logger
+
+    log_dir = tmp_path / "custom_logs"
+    custom_log = setup_custom_logger(
+        name="Test_Custom_Logger",
+        log_folder=str(log_dir),
+        timestamp="2026-10-18_00-00-00",
+    )
+    assert custom_log is not None
+    assert log_dir.exists()
+
+    test_msg = "Immediate unbuffered logging verification check 12345"
+    custom_log.info(test_msg)
+
+    # Immediately check file content on disk without waiting or closing logger
+    log_file = log_dir / "opt_2026-10-18_00-00-00_rank_0.log"
+    assert log_file.exists()
+    content = log_file.read_text(encoding="utf-8")
+    assert test_msg in content

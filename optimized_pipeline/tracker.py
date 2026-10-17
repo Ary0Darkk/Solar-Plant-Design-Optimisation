@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
@@ -46,21 +47,48 @@ class ColoredFormatter(logging.Formatter):
         return f"{color}{super().format(record)}{self.RESET}"
 
 
+class FlushingFileHandler(logging.FileHandler):
+    """FileHandler that flushes immediately after every write to eliminate buffering delays."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        self.flush()
+
+
+class FlushingStreamHandler(logging.StreamHandler):
+    """StreamHandler that flushes immediately after every write."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        self.flush()
+
+
 def setup_logger(
     rank: int = 0,
     timestamp: Optional[str] = None,
     log_dir: Optional[Path] = None,
+    name: str = "NYS_Optimisation",
+    propagate: bool = True,
+    use_stdout: bool = True,
 ) -> logging.Logger:
-    """Initialize file and rank-0 console logging."""
+    """
+    Initialize file and console logging with automatic immediate flushing.
+    Logs are written to both rank-specific log files and sys.stdout with zero buffering delay.
+    """
     folder = log_dir or (PROJECT_ROOT / "logs")
     folder.mkdir(parents=True, exist_ok=True)
 
-    log = logging.getLogger("NYS_Optimisation")
+    log = logging.getLogger(name)
     log.setLevel(logging.INFO)
-    log.propagate = False
+    log.propagate = propagate
 
-    if log.handlers:
-        log.handlers.clear()
+    # Close existing handlers to release file locks on Windows
+    for h in list(log.handlers):
+        try:
+            h.close()
+        except Exception:
+            pass
+    log.handlers.clear()
 
     ts = timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     file_path = folder / f"opt_{ts}_rank_{rank}.log"
@@ -68,13 +96,14 @@ def setup_logger(
     f_format = logging.Formatter(
         "%(asctime)s | PID:%(process)-5d | %(levelname)-8s | %(filename)s:%(lineno)d | %(message)s"
     )
-    fh = logging.FileHandler(file_path, encoding="utf-8")
+    fh = FlushingFileHandler(file_path, encoding="utf-8")
     fh.setLevel(logging.INFO)
     fh.setFormatter(f_format)
     log.addHandler(fh)
 
     if rank == 0:
-        ch = logging.StreamHandler()
+        stream = sys.stdout if use_stdout else sys.stderr
+        ch = FlushingStreamHandler(stream)
         ch.setLevel(logging.INFO)
         ch.setFormatter(
             ColoredFormatter("%(asctime)s | PID:%(process)-5d | %(levelname)-8s | %(message)s")

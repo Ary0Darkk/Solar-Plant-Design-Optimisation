@@ -120,8 +120,12 @@ def evaluate_batch_memory_optimized(
             penalized += len(day_results)
         else:
             total_fit = sum(val for _, val, _ in day_results if val is not None)
-            ind.fitness.values = (float(total_fit),)
-            successful += len(day_results)
+            if np.isnan(total_fit) or np.isinf(total_fit):
+                ind.fitness.values = (config.simulation.penalty,)
+                penalized += len(day_results)
+            else:
+                ind.fitness.values = (float(total_fit),)
+                successful += len(day_results)
 
     # Free task dictionaries and temporary structures
     del tasks
@@ -176,8 +180,16 @@ def run_optimization(
     rank: int = 0,
     mpi_size: int = 1,
     job_id: Optional[str] = None,
+    custom_logger: Optional[logging.Logger] = None,
 ) -> Tuple[Dict[str, Any], float, Dict[str, Any]]:
     """Master optimization orchestration loop with memory recycling."""
+    global logger
+    if custom_logger is not None:
+        logger = custom_logger
+        for h in custom_logger.handlers:
+            if h not in logger.handlers:
+                logger.addHandler(h)
+
     init_deap_types()
     season_days = get_season_days(season, config.seasons)
     num_days = len(season_days)

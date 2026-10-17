@@ -16,6 +16,7 @@ from optimized_pipeline.cli import main, parse_arguments
 from optimized_pipeline.config import PipelineConfig, get_pipeline_config
 from optimized_pipeline.engine import run_optimization
 from optimized_pipeline.parallel import Communicator, get_communicator
+from optimized_pipeline.tracker import setup_logger
 from optimized_pipeline.weather import get_season_days
 
 
@@ -51,6 +52,8 @@ def run_deap_ga_optimisation(
     if active_comm is None:
         active_comm = get_communicator()
 
+    active_logger = logger or setup_logger(rank=rank)
+
     if local_pool is not None:
         return run_optimization(
             season=season,
@@ -59,6 +62,7 @@ def run_deap_ga_optimisation(
             comm=active_comm,
             rank=rank,
             mpi_size=mpi_size,
+            custom_logger=active_logger,
         )
     else:
         workers = resolve_worker_count(kwargs.get("workers"))
@@ -71,6 +75,7 @@ def run_deap_ga_optimisation(
                 comm=active_comm,
                 rank=rank,
                 mpi_size=mpi_size,
+                custom_logger=active_logger,
             )
 
 
