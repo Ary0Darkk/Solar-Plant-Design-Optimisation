@@ -113,7 +113,8 @@ echo "================================================="
 mpirun -np 7 \
     --hostfile "$PBS_NODEFILE" \
     python main.py \
-    --season "$SEASON"
+    --season "$SEASON" \
+    --job-id "$PBS_JOBID"
 
 EXIT_CODE=$?
 

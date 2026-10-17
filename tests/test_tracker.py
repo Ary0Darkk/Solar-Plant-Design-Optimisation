@@ -52,6 +52,7 @@ def test_plot_and_export_artifacts(tmp_path: Path, monkeypatch):
         gens=gens,
         max_fitness=max_fitness,
         avg_fitness=avg_fitness,
+        job_id="TEST_JOB_999",
     )
 
     results_dir = tmp_path / "results" / "GA_results"
@@ -77,9 +78,11 @@ def test_plot_and_export_artifacts(tmp_path: Path, monkeypatch):
     assert "Optimal Plant Design Parameters" in content
     assert "Daily Operational Schedule" in content
     assert "150,000.00 INR" in content
+    assert "TEST_JOB_999" in content
 
     # 5. Check returned dictionary
     assert sol["season"] == "summer"
+    assert sol["job_id"] == "TEST_JOB_999"
     assert sol["best_fitness"] == 150000.0
     assert sol["design_specified_total_aperture"] == 9000
     assert sol["design_Row_Distance"] == 16

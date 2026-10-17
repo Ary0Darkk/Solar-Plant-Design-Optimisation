@@ -206,8 +206,16 @@ def plot_and_export(
     gens: Sequence[int],
     max_fitness: Sequence[float],
     avg_fitness: Sequence[float],
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Generate final plot and export CSV, JSON, and logbook artifacts."""
+    if job_id is None:
+        job_id = (
+            os.environ.get("PBS_JOBID")
+            or os.environ.get("SLURM_JOB_ID")
+            or os.environ.get("JOB_ID")
+        )
+
     results_dir = PROJECT_ROOT / "results" / "GA_results"
     plots_dir = PROJECT_ROOT / "plots" / "GA_plots"
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -231,6 +239,8 @@ def plot_and_export(
 
     # 2. Results dictionary
     sol: Dict[str, Any] = {"season": season, "best_fitness": best_fitness}
+    if job_id:
+        sol["job_id"] = str(job_id)
     design_dict: Dict[str, Any] = {}
     for i, name in enumerate(design_names):
         sol[f"design_{name}"] = best_ind[i]
@@ -285,6 +295,7 @@ def plot_and_export(
     report_lines = [
         f"# CSP Genetic Algorithm Optimization Report — {season.capitalize()}",
         "",
+        f"- **Job ID**: `{job_id}`" if job_id else "- **Job ID**: `local`",
         f"- **Execution Timestamp**: `{timestamp}`",
         f"- **Season**: `{season}`",
         f"- **Final Best Fitness**: `{best_fitness:,.2f} INR`",

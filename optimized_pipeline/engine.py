@@ -175,6 +175,7 @@ def run_optimization(
     comm: Communicator,
     rank: int = 0,
     mpi_size: int = 1,
+    job_id: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], float, Dict[str, Any]]:
     """Master optimization orchestration loop with memory recycling."""
     init_deap_types()
@@ -444,6 +445,7 @@ def run_optimization(
         gens=gens_log,
         max_fitness=max_log,
         avg_fitness=avg_log,
+        job_id=job_id,
     )
 
     return sol_dict, best_fit, {"pop": pop, "logbook": logbook, "hof": hof}

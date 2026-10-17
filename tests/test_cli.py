@@ -58,3 +58,25 @@ def test_parse_arguments_invalid_season():
     """Verify that an invalid season choice raises SystemExit (argparse error)."""
     with pytest.raises(SystemExit):
         parse_arguments(["--season", "autumn"])
+
+
+def test_collect_run_tags_with_job_id(monkeypatch):
+    """Verify that collect_run_tags correctly captures job_id from CLI and environment."""
+    from optimized_pipeline.cli import collect_run_tags
+
+    # 1. From CLI flag
+    args = parse_arguments(["--season", "monsoon", "--job-id", "PBS_998877"])
+    tags = collect_run_tags(args, rank=0, size=7, workers=16)
+    assert tags["job_id"] == "PBS_998877"
+    assert tags["season"] == "monsoon"
+    assert tags["mpi_size"] == "7"
+    assert tags["workers_per_rank"] == "16"
+
+    # 2. From environment variable fallback
+    monkeypatch.setenv("PBS_JOBID", "12345.headnode")
+    monkeypatch.setenv("PBS_QUEUE", "standard")
+    args_env = parse_arguments(["--season", "winter"])
+    tags_env = collect_run_tags(args_env, rank=0, size=7, workers=16)
+    assert tags_env["job_id"] == "12345.headnode"
+    assert tags_env["queue"] == "standard"
+    assert tags_env["scheduler"] == "PBS"

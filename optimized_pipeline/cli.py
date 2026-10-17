@@ -77,11 +77,74 @@ def parse_arguments(argv=None):
         help="Maximum electricity tariff in INR/kWh (default: 8.0)",
     )
     parser.add_argument(
+        "--job-id",
+        type=str,
+        default=None,
+        help="HPC scheduler or run Job ID for MLflow tracking (defaults to PBS_JOBID / SLURM_JOB_ID)",
+    )
+    parser.add_argument(
         "--no-tracking",
         action="store_true",
         help="Disable remote DagsHub/MLflow experiment tracking",
     )
     return parser.parse_args(argv)
+
+
+def collect_run_tags(args, rank: int, size: int, workers: int) -> dict:
+    """Collect scheduler metadata, job_id, and system properties for MLflow."""
+    import socket
+    import subprocess
+
+    job_id = (
+        getattr(args, "job_id", None)
+        or os.environ.get("PBS_JOBID")
+        or os.environ.get("SLURM_JOB_ID")
+        or os.environ.get("JOB_ID")
+        or f"local_{os.getpid()}"
+    )
+    job_name = (
+        os.environ.get("PBS_JOBNAME") or os.environ.get("SLURM_JOB_NAME") or f"GA_Opt_{args.season}"
+    )
+    queue = os.environ.get("PBS_QUEUE") or os.environ.get("SLURM_PARTITION") or "local"
+    total_cpus = (
+        os.environ.get("PBS_NCPUS") or os.environ.get("APP_CPU_COUNT") or str(workers * size)
+    )
+    user = os.environ.get("USER") or os.environ.get("USERNAME") or "anonymous"
+    hostname = socket.gethostname()
+
+    tags = {
+        "pipeline": "optimized_pipeline",
+        "season": str(args.season),
+        "algorithm": "DEAP GA",
+        "memory_mode": "24h_slice_recycle",
+        "job_id": str(job_id),
+        "job_name": str(job_name),
+        "queue": str(queue),
+        "scheduler": "PBS"
+        if "PBS_JOBID" in os.environ
+        else "Slurm"
+        if "SLURM_JOB_ID" in os.environ
+        else "Local",
+        "mpi_size": str(size),
+        "workers_per_rank": str(workers),
+        "total_cpus": str(total_cpus),
+        "hostname": str(hostname),
+        "user": str(user),
+    }
+
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            text=True,
+        ).strip()
+        if commit:
+            tags["git_commit"] = commit
+    except Exception:
+        pass
+
+    return tags
 
 
 def main(argv=None):
@@ -115,6 +178,9 @@ def main(argv=None):
     ts = comm.bcast(ts, root=0)
 
     logger = setup_logger(rank=rank, timestamp=ts)
+    run_tags = collect_run_tags(args, rank=rank, size=size, workers=workers)
+    job_id = run_tags.get("job_id")
+
     logger.info("=" * 60)
     logger.info("Concentrated Solar Power (CSP) Genetic Algorithm Optimization")
     logger.info(
@@ -127,6 +193,12 @@ def main(argv=None):
         size,
     )
     logger.info(
+        "Scheduler Job ID: %s | Queue: %s | Host: %s",
+        job_id,
+        run_tags.get("queue"),
+        run_tags.get("hostname"),
+    )
+    logger.info(
         "Hint: For a faster run, use: python deap_ga_optimiser.py --pop-size 14 --generations 5"
     )
     logger.info("=" * 60)
@@ -136,15 +208,12 @@ def main(argv=None):
             init_tracking()
 
         try:
-            with mlflow.start_run(run_name=f"GA_Opt_{args.season}"):
-                mlflow.set_tags(
-                    {
-                        "pipeline": "optimized_pipeline",
-                        "season": args.season,
-                        "algorithm": "DEAP GA",
-                        "memory_mode": "24h_slice_recycle",
-                    }
-                )
+            run_name = f"{run_tags.get('job_name', f'GA_Opt_{args.season}')}"
+            if job_id and not job_id.startswith("local_"):
+                run_name = f"{run_name}_{job_id}"
+
+            with mlflow.start_run(run_name=run_name):
+                mlflow.set_tags(run_tags)
                 mlflow.log_params(
                     {
                         "season": args.season,
@@ -152,6 +221,7 @@ def main(argv=None):
                         "generations": config.ga.num_generations,
                         "workers_per_rank": workers,
                         "max_tasks_per_child": config.ga.max_tasks_per_child,
+                        "job_id": str(job_id),
                     }
                 )
 
@@ -167,6 +237,7 @@ def main(argv=None):
                             comm=comm,
                             rank=rank,
                             mpi_size=size,
+                            job_id=job_id,
                         )
                 finally:
                     # Notify remote MPI ranks to stop
@@ -187,6 +258,7 @@ def main(argv=None):
                         comm=comm,
                         rank=rank,
                         mpi_size=size,
+                        job_id=job_id,
                     )
             finally:
                 for w in range(1, size):
