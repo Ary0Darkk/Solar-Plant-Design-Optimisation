@@ -16,6 +16,7 @@ from optimized_pipeline.engine import (
     evaluate_batch_memory_optimized,
 )
 from optimized_pipeline.parallel import partition_batches
+from optimized_pipeline.weather import get_season_days
 
 
 def test_partition_batches():
@@ -34,6 +35,9 @@ def test_partition_batches():
 
 def test_eval_single_task_valid():
     """Verify _eval_single_task produces a scalar objective for valid inputs."""
+    summer_days = get_season_days("summer")
+    first_day = summer_days[0]  # March 9th: local_index=0, day_index=67
+
     overrides = {
         "specified_total_aperture": 9000,
         "Row_Distance": 16.0,
@@ -44,11 +48,11 @@ def test_eval_single_task_valid():
         "T_startup": 350,
         "T_shutdown": 280,
     }
-    task_args = (0, 0, overrides, 140)
+    task_args = (0, first_day["local_index"], overrides, first_day["day_index"])
     ind_idx, local_idx, obj, is_pen = _eval_single_task(task_args)
 
     assert ind_idx == 0
-    assert local_idx == 0
+    assert local_idx == first_day["local_index"]
     assert is_pen is False
     assert obj is not None
     assert isinstance(obj, float)
@@ -56,6 +60,9 @@ def test_eval_single_task_valid():
 
 def test_eval_single_task_penalized():
     """Verify _eval_single_task flags invalid/infeasible inputs."""
+    summer_days = get_season_days("summer")
+    first_day = summer_days[0]  # March 9th: local_index=0, day_index=67
+
     # Violates vehicular maintenance corridor: Row_Distance (6m) - W_aperture (6m) = 0 < 3.5m
     overrides = {
         "specified_total_aperture": 9000,
@@ -67,11 +74,11 @@ def test_eval_single_task_penalized():
         "T_startup": 350,
         "T_shutdown": 280,
     }
-    task_args = (1, 0, overrides, 140)
+    task_args = (1, first_day["local_index"], overrides, first_day["day_index"])
     ind_idx, local_idx, obj, is_pen = _eval_single_task(task_args)
 
     assert ind_idx == 1
-    assert local_idx == 0
+    assert local_idx == first_day["local_index"]
     assert is_pen is True
     assert obj is None
 
