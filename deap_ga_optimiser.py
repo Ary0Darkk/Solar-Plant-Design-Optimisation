@@ -43,16 +43,35 @@ def run_deap_ga_optimisation(
     if num_generations is not None:
         cfg.ga.num_generations = num_generations
 
+    import multiprocessing as mp
+
+    from optimized_pipeline.cli import resolve_worker_count
+
     active_comm: Optional[Communicator] = comm
     if active_comm is None:
         active_comm = get_communicator()
 
-    return run_optimization(
-        season=season,
-        config=cfg,
-        comm=active_comm,
-        custom_logger=logger,
-    )
+    if local_pool is not None:
+        return run_optimization(
+            season=season,
+            config=cfg,
+            pool=local_pool,
+            comm=active_comm,
+            rank=rank,
+            mpi_size=mpi_size,
+        )
+    else:
+        workers = resolve_worker_count(kwargs.get("workers"))
+        ctx = mp.get_context()
+        with ctx.Pool(processes=workers, maxtasksperchild=cfg.ga.max_tasks_per_child) as pool:
+            return run_optimization(
+                season=season,
+                config=cfg,
+                pool=pool,
+                comm=active_comm,
+                rank=rank,
+                mpi_size=mpi_size,
+            )
 
 
 __all__ = [

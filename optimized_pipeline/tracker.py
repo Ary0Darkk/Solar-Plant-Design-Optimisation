@@ -119,9 +119,11 @@ def init_tracking(
     try:
         db_path = PROJECT_ROOT / "results" / "mlflow.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        mlflow.set_tracking_uri(f"sqlite:///{db_path.as_posix()}")
+        sqlite_uri = f"sqlite:///{db_path.as_posix()}"
+        os.environ["MLFLOW_TRACKING_URI"] = sqlite_uri
+        mlflow.set_tracking_uri(sqlite_uri)
         mlflow.set_experiment(experiment_name)
-        logger.info("Local MLflow tracking active at sqlite:///%s", db_path)
+        logger.info("Local MLflow tracking active at %s", sqlite_uri)
         return True
     except Exception as exc:
         logger.warning("Local MLflow initialization failed (%s). Continuing without tracking.", exc)
