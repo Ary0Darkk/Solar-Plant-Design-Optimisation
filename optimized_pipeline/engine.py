@@ -349,6 +349,26 @@ def run_optimization(
         best_fitness_ever = record["max"]
         logger.info("Gen 0 complete | Best Fitness: %.2f | Avg: %.2f", record["max"], record["avg"])
 
+        # Checkpoint Generation 0
+        if ga.checkpoint_interval == 1 or best_fitness_ever > -float("inf"):
+            payload = {
+                "season": season,
+                "ckpt_key": ckpt_sig,
+                "generation": 0,
+                "best_fitness_ever": best_fitness_ever,
+                "pop": serialize_pop(pop),
+                "hof": serialize_pop(hof),
+                "logbook": logbook,
+                "rndstate": random.getstate(),
+                "np_rndstate": np.random.get_state(),
+                "total_successful": total_successful,
+                "total_penalized": total_penalized,
+            }
+            save_compressed_checkpoint(payload, latest_ckpt_file)
+            save_compressed_checkpoint(payload, ckpt_dir / "checkpoint_gen_0.pkl.gz")
+            save_compressed_checkpoint(payload, best_ckpt_file)
+            del payload
+
     # Evolutionary Loop
     for gen in range(max(1, start_gen), num_generations):
         offspring = algorithms.varAnd(pop, toolbox, ga.cxpb, ga.mutpb)
@@ -421,6 +441,7 @@ def run_optimization(
                 "total_penalized": total_penalized,
             }
             save_compressed_checkpoint(payload, latest_ckpt_file)
+            save_compressed_checkpoint(payload, ckpt_dir / f"checkpoint_gen_{gen}.pkl.gz")
             if is_global_best:
                 save_compressed_checkpoint(payload, best_ckpt_file)
             del payload
