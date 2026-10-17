@@ -86,3 +86,30 @@ def test_plot_and_export_artifacts(tmp_path: Path, monkeypatch):
     assert sol["best_fitness"] == 150000.0
     assert sol["design_specified_total_aperture"] == 9000
     assert sol["design_Row_Distance"] == 16
+
+
+def test_init_tracking_local_fallback(tmp_path: Path, monkeypatch):
+    """Verify that init_tracking falls back to local SQLite database when remote token is absent."""
+    import mlflow
+
+    from optimized_pipeline.tracker import init_tracking
+
+    monkeypatch.setattr("optimized_pipeline.tracker.PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("DAGSHUB_USER_TOKEN", raising=False)
+    monkeypatch.delenv("MLFLOW_TRACKING_PASSWORD", raising=False)
+
+    # 1. Disabled tracking flag
+    assert init_tracking(enabled=False) is False
+
+    # 2. Enabled tracking without credentials triggers local SQLite fallback
+    # Redirect Path.home() so .dagshub_token is not discovered
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "fake_home")
+
+    success = init_tracking(enabled=True, experiment_name="Test_Fallback_Exp")
+    assert success is True
+
+    # Confirm active tracking URI points to local SQLite database
+    uri = mlflow.get_tracking_uri()
+    assert uri.startswith("sqlite:///")
+    assert "mlflow.db" in uri
+    assert (tmp_path / "results" / "mlflow.db").exists()
