@@ -4,7 +4,9 @@ Memory-efficient configuration models and physical parameter boundaries.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -169,6 +171,169 @@ class PipelineConfig:
     to_legacy_dict = to_dict
 
 
-def get_pipeline_config() -> PipelineConfig:
-    """Return a fresh default configuration instance."""
-    return PipelineConfig()
+def load_pipeline_config(config_path: Optional[Union[Path, str]] = None) -> PipelineConfig:
+    """
+    Load pipeline configuration from YAML file.
+
+    If config_path is None, attempts to load from `PROJECT_ROOT / "config.yaml"`.
+    Falls back to built-in defaults if default config.yaml is not found.
+    """
+    target_path = Path(config_path) if config_path else (PROJECT_ROOT / "config.yaml")
+    if not target_path.exists():
+        if config_path:
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        return PipelineConfig()
+
+    with open(target_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    # 1. Seasons
+    seasons = dict(SEASONS)
+    if "seasons" in data and isinstance(data["seasons"], dict):
+        seasons = {
+            s: [tuple(item) for item in days]  # type: ignore
+            for s, days in data["seasons"].items()
+        }
+
+    # 2. Design Bounds
+    design_bounds = DESIGN_BOUNDS
+    if "design_bounds" in data and isinstance(data["design_bounds"], dict):
+        d_names = tuple(data["design_bounds"].keys())
+        d_lb = tuple(int(data["design_bounds"][k][0]) for k in d_names)
+        d_ub = tuple(int(data["design_bounds"][k][1]) for k in d_names)
+        design_bounds = VariableBounds(
+            names=d_names,
+            lb=d_lb,
+            ub=d_ub,
+            types=tuple(int for _ in d_names),
+        )
+
+    # 3. Operational Bounds
+    op_bounds = OPERATIONAL_BOUNDS
+    if "operational_bounds" in data and isinstance(data["operational_bounds"], dict):
+        o_names = tuple(data["operational_bounds"].keys())
+        o_lb = tuple(int(data["operational_bounds"][k][0]) for k in o_names)
+        o_ub = tuple(int(data["operational_bounds"][k][1]) for k in o_names)
+        op_bounds = VariableBounds(
+            names=o_names,
+            lb=o_lb,
+            ub=o_ub,
+            types=tuple(int for _ in o_names),
+        )
+
+    # 4. GA Parameters
+    ga_params = GAParameters()
+    if "ga" in data and isinstance(data["ga"], dict):
+        ga_dict = data["ga"]
+        for key, val in ga_dict.items():
+            if hasattr(ga_params, key):
+                field_type = type(getattr(ga_params, key))
+                setattr(ga_params, key, field_type(val))
+
+    # 5. Tariff Config
+    tariff_cfg = TariffConfig()
+    if "tariff" in data and isinstance(data["tariff"], dict):
+        t_dict = data["tariff"]
+        if "min_price" in t_dict:
+            tariff_cfg.min_price = float(t_dict["min_price"])
+        if "max_price" in t_dict:
+            tariff_cfg.max_price = float(t_dict["max_price"])
+        if "demand_file" in t_dict:
+            df_path = Path(t_dict["demand_file"])
+            tariff_cfg.demand_file = df_path if df_path.is_absolute() else (PROJECT_ROOT / df_path)
+        if "cache_file" in t_dict:
+            cf_path = Path(t_dict["cache_file"])
+            tariff_cfg.cache_file = cf_path if cf_path.is_absolute() else (PROJECT_ROOT / cf_path)
+
+    # 6. Simulation Config
+    sim_cfg = SimulationConfig()
+    if "simulation" in data and isinstance(data["simulation"], dict):
+        s_dict = data["simulation"]
+        if "json_file" in s_dict:
+            jf_path = Path(s_dict["json_file"])
+            sim_cfg.json_file = jf_path if jf_path.is_absolute() else (PROJECT_ROOT / jf_path)
+        if "model_name" in s_dict:
+            sim_cfg.model_name = str(s_dict["model_name"])
+        if "penalty" in s_dict:
+            sim_cfg.penalty = float(s_dict["penalty"])
+        if "log_each_simulation" in s_dict:
+            sim_cfg.log_each_simulation = bool(s_dict["log_each_simulation"])
+
+    return PipelineConfig(
+        seasons=seasons,
+        design=design_bounds,
+        operational=op_bounds,
+        ga=ga_params,
+        tariff=tariff_cfg,
+        simulation=sim_cfg,
+    )
+
+
+def save_pipeline_config_to_yaml(config: PipelineConfig, file_path: Union[Path, str]) -> None:
+    """Serialize PipelineConfig instance to a YAML file."""
+    target_path = Path(file_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "ga": {
+            "pop_size": config.ga.pop_size,
+            "num_generations": config.ga.num_generations,
+            "tournament_size": config.ga.tournament_size,
+            "hall_of_fame_size": config.ga.hall_of_fame_size,
+            "cxpb": config.ga.cxpb,
+            "mutpb": config.ga.mutpb,
+            "indpb": config.ga.indpb,
+            "random_seed": config.ga.random_seed,
+            "resume_from_checkpoint": config.ga.resume_from_checkpoint,
+            "checkpoint_interval": config.ga.checkpoint_interval,
+            "max_tasks_per_child": config.ga.max_tasks_per_child,
+            "enable_gc_collection": config.ga.enable_gc_collection,
+            "early_stopping_patience": config.ga.early_stopping_patience,
+        },
+        "tariff": {
+            "min_price": config.tariff.min_price,
+            "max_price": config.tariff.max_price,
+            "demand_file": (
+                str(config.tariff.demand_file.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                if config.tariff.demand_file.is_relative_to(PROJECT_ROOT)
+                else str(config.tariff.demand_file).replace("\\", "/")
+            ),
+            "cache_file": (
+                str(config.tariff.cache_file.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                if config.tariff.cache_file.is_relative_to(PROJECT_ROOT)
+                else str(config.tariff.cache_file).replace("\\", "/")
+            ),
+        },
+        "simulation": {
+            "json_file": (
+                str(config.simulation.json_file.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                if config.simulation.json_file.is_relative_to(PROJECT_ROOT)
+                else str(config.simulation.json_file).replace("\\", "/")
+            ),
+            "model_name": config.simulation.model_name,
+            "penalty": config.simulation.penalty,
+            "log_each_simulation": config.simulation.log_each_simulation,
+        },
+        "design_bounds": {
+            name: [int(low), int(high)]
+            for name, low, high in zip(config.design.names, config.design.lb, config.design.ub)
+        },
+        "operational_bounds": {
+            name: [int(low), int(high)]
+            for name, low, high in zip(
+                config.operational.names, config.operational.lb, config.operational.ub
+            )
+        },
+        "seasons": {
+            s: [list(d) for d in days]
+            for s, days in config.seasons.items()
+        },
+    }
+
+    with open(target_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(data, f, sort_keys=False, default_flow_style=None)
+
+
+def get_pipeline_config(config_path: Optional[Union[Path, str]] = None) -> PipelineConfig:
+    """Return a PipelineConfig instance, loaded from YAML or built-in defaults."""
+    return load_pipeline_config(config_path)

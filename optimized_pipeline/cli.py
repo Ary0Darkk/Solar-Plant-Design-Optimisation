@@ -84,6 +84,12 @@ def parse_arguments(argv=None):
         help="HPC scheduler or run Job ID for MLflow tracking (defaults to PBS_JOBID / SLURM_JOB_ID)",
     )
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to YAML configuration file (default: config.yaml in project root)",
+    )
+    parser.add_argument(
         "--no-tracking",
         action="store_true",
         help="Disable remote DagsHub/MLflow experiment tracking",
@@ -175,7 +181,7 @@ def collect_run_tags(args, rank: int, size: int, workers: int) -> dict:
 def main(argv=None):
     """Main execution entry point."""
     args = parse_arguments(argv)
-    config = get_pipeline_config()
+    config = get_pipeline_config(args.config)
 
     if args.generations is not None:
         config.ga.num_generations = args.generations

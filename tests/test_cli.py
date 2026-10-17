@@ -19,6 +19,7 @@ def test_parse_arguments_defaults():
     assert args.min_price is None
     assert args.max_price is None
     assert args.no_tracking is False
+    assert args.config is None
 
 
 def test_parse_arguments_custom_flags():
@@ -40,6 +41,8 @@ def test_parse_arguments_custom_flags():
         "2.5",
         "--max-price",
         "9.0",
+        "--config",
+        "custom_pipeline.yaml",
         "--no-tracking",
     ]
     args = parse_arguments(argv)
@@ -51,6 +54,7 @@ def test_parse_arguments_custom_flags():
     assert args.seed == 123
     assert args.min_price == 2.5
     assert args.max_price == 9.0
+    assert args.config == "custom_pipeline.yaml"
     assert args.no_tracking is True
 
 

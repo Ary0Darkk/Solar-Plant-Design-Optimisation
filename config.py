@@ -14,9 +14,11 @@ from optimized_pipeline.config import (
     TariffConfig,
     VariableBounds,
     get_pipeline_config,
+    load_pipeline_config,
+    save_pipeline_config_to_yaml,
 )
 
-# Canonical configuration instance
+# Canonical configuration instance loaded from config.yaml
 PIPELINE_CONFIG: PipelineConfig = get_pipeline_config()
 
 # Backward-compatible dictionary view
@@ -27,6 +29,8 @@ __all__ = [
     "PIPELINE_CONFIG",
     "PipelineConfig",
     "get_pipeline_config",
+    "load_pipeline_config",
+    "save_pipeline_config_to_yaml",
     "DESIGN_BOUNDS",
     "OPERATIONAL_BOUNDS",
     "SEASONS",

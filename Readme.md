@@ -160,7 +160,9 @@ Solar-Plant-Design-Optimisation/
 ├── plots/GA_plots/                # High-resolution convergence plots (PNG/PDF)
 ├── results/GA_results/            # CSV, JSON, and Multi-sheet Excel summaries
 ├── simulation/                    # Weather dataset & Gurgaon plant config
-├── tests/                         # Comprehensive Pytest test suite (42 tests)
+├── tests/                         # Comprehensive Pytest test suite (55 tests)
+├── config.yaml                    # Global YAML pipeline configuration
+├── config.py                      # Backward-compatible configuration bridge
 ├── deap_ga_optimiser.py           # Backward-compatible API wrapper
 ├── job_*.pbs                      # HPC batch scripts (Winter, Summer, Monsoon, Post)
 ├── main.py                        # Primary entry point
@@ -215,6 +217,7 @@ options:
   --min-price MIN_PRICE Minimum electricity tariff in INR/kWh (default: 3.0)
   --max-price MAX_PRICE Maximum electricity tariff in INR/kWh (default: 8.0)
   --job-id JOB_ID       Scheduler Job ID for tracking (auto-detected from PBS_JOBID / SLURM_JOB_ID)
+  --config CONFIG       Path to YAML configuration file (default: config.yaml in project root)
   --no-tracking         Disable remote experiment tracking (uses local SQLite fallback)
 ```
 
