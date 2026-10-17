@@ -24,13 +24,13 @@ class DailySimulationSlice:
     Total memory footprint: ~672 bytes (vs ~490 KB in legacy 8,760-hour list representation).
     """
 
-    hourly_energy: np.ndarray           # Shape: (24,), dtype: float32
-    field_htf_pump_power: np.ndarray    # Shape: (24,), dtype: float32
-    pc_htf_pump_power: np.ndarray       # Shape: (24,), dtype: float32
+    hourly_energy: np.ndarray  # Shape: (24,), dtype: float32
+    field_htf_pump_power: np.ndarray  # Shape: (24,), dtype: float32
+    pc_htf_pump_power: np.ndarray  # Shape: (24,), dtype: float32
     collector_tracking_power: np.ndarray  # Shape: (24,), dtype: float32
-    pc_startup_thermal: np.ndarray      # Shape: (24,), dtype: float32
-    piping_loss: np.ndarray             # Shape: (24,), dtype: float32
-    receiver_loss: np.ndarray           # Shape: (24,), dtype: float32
+    pc_startup_thermal: np.ndarray  # Shape: (24,), dtype: float32
+    piping_loss: np.ndarray  # Shape: (24,), dtype: float32
+    receiver_loss: np.ndarray  # Shape: (24,), dtype: float32
     annual_energy: float
     land_area: float
     total_installed_cost: float
@@ -57,9 +57,7 @@ def validate_constraints(overrides: Dict[str, Any]) -> bool:
     return True
 
 
-
 class CompactSimulator:
-
     """PySAM model runner optimizing process memory and extracting strictly needed hourly slices."""
 
     def __init__(self, config: Optional[SimulationConfig] = None):
@@ -216,4 +214,3 @@ def get_simulator() -> CompactSimulator:
 
 # Alias for compatibility
 PySAMSimulator = CompactSimulator
-

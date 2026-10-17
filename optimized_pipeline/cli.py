@@ -84,7 +84,6 @@ def parse_arguments(argv=None):
     return parser.parse_args(argv)
 
 
-
 def main(argv=None):
     """Main execution entry point."""
     args = parse_arguments(argv)
@@ -103,7 +102,6 @@ def main(argv=None):
     if args.max_price is not None:
         config.tariff.max_price = args.max_price
 
-
     workers = args.workers
     if workers is None:
         workers = int(os.environ.get("LOCAL_WORKERS", "4"))
@@ -119,16 +117,23 @@ def main(argv=None):
     logger = setup_logger(rank=rank, timestamp=ts)
     logger.info("=" * 60)
     logger.info("Concentrated Solar Power (CSP) Genetic Algorithm Optimization")
-    logger.info("Season: %s | Pop: %d | Gens: %d | Workers: %d | Rank: %d/%d",
-                args.season, config.ga.pop_size, config.ga.num_generations, workers, rank, size)
-    logger.info("Hint: For a faster run, use: python deap_ga_optimiser.py --pop-size 14 --generations 5")
+    logger.info(
+        "Season: %s | Pop: %d | Gens: %d | Workers: %d | Rank: %d/%d",
+        args.season,
+        config.ga.pop_size,
+        config.ga.num_generations,
+        workers,
+        rank,
+        size,
+    )
+    logger.info(
+        "Hint: For a faster run, use: python deap_ga_optimiser.py --pop-size 14 --generations 5"
+    )
     logger.info("=" * 60)
 
     if rank == 0:
         if not args.no_tracking:
             init_tracking()
-
-
 
         try:
             with mlflow.start_run(run_name=f"GA_Opt_{args.season}"):
@@ -152,7 +157,9 @@ def main(argv=None):
 
                 ctx = mp.get_context()
                 try:
-                    with ctx.Pool(processes=workers, maxtasksperchild=config.ga.max_tasks_per_child) as pool:
+                    with ctx.Pool(
+                        processes=workers, maxtasksperchild=config.ga.max_tasks_per_child
+                    ) as pool:
                         run_optimization(
                             season=args.season,
                             config=config,
@@ -170,7 +177,9 @@ def main(argv=None):
             # Fallback run without MLflow context if tracking fails
             ctx = mp.get_context()
             try:
-                with ctx.Pool(processes=workers, maxtasksperchild=config.ga.max_tasks_per_child) as pool:
+                with ctx.Pool(
+                    processes=workers, maxtasksperchild=config.ga.max_tasks_per_child
+                ) as pool:
                     run_optimization(
                         season=args.season,
                         config=config,

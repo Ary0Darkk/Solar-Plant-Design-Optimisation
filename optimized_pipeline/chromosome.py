@@ -39,10 +39,7 @@ def build_gene_generator(
 
 def serialize_pop(pop: Sequence[Any]) -> List[Tuple[List[int], Tuple[float, ...]]]:
     """Serialize population to compact tuples for disk storage."""
-    return [
-        (list(ind), tuple(ind.fitness.values) if ind.fitness.valid else ())
-        for ind in pop
-    ]
+    return [(list(ind), tuple(ind.fitness.values) if ind.fitness.valid else ()) for ind in pop]
 
 
 def deserialize_pop(

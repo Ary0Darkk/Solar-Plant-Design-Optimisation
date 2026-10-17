@@ -35,7 +35,9 @@ from .weather import get_season_days
 logger = logging.getLogger("NYS_Optimisation")
 
 
-def _eval_single_task(args: Tuple[int, int, Dict[str, Any], int]) -> Tuple[int, int, Optional[float], bool]:
+def _eval_single_task(
+    args: Tuple[int, int, Dict[str, Any], int],
+) -> Tuple[int, int, Optional[float], bool]:
     """
     Worker task: execute PySAM 24h simulation, compute scalar objective, and discard simulation arrays.
     Returns: (ind_idx, local_day_idx, scalar_objective or None, is_penalized)
@@ -85,18 +87,26 @@ def evaluate_batch_memory_optimized(
     # Stream task results generator
     # Stream task results generator with low chunksize for immediate responsive streaming
     chunksize = min(4, max(1, len(tasks) // (getattr(pool, "_processes", 4) * 4)))
-    results_by_ind: Dict[int, List[Tuple[int, Optional[float], bool]]] = {i: [] for i in range(len(batch))}
+    results_by_ind: Dict[int, List[Tuple[int, Optional[float], bool]]] = {
+        i: [] for i in range(len(batch))
+    }
     total_tasks = len(tasks)
     done_tasks = 0
     log_interval = max(5, min(25, total_tasks // 10))
 
-    for ind_idx, l_idx, obj, pen in pool.imap_unordered(_eval_single_task, tasks, chunksize=chunksize):
+    for ind_idx, l_idx, obj, pen in pool.imap_unordered(
+        _eval_single_task, tasks, chunksize=chunksize
+    ):
         results_by_ind[ind_idx].append((l_idx, obj, pen))
         done_tasks += 1
         if done_tasks == 1 or done_tasks % log_interval == 0 or done_tasks == total_tasks:
-            logger.info("[Rank %d] Simulation progress: %d/%d tasks evaluated (%.1f%%)",
-                        rank, done_tasks, total_tasks, 100.0 * done_tasks / total_tasks)
-
+            logger.info(
+                "[Rank %d] Simulation progress: %d/%d tasks evaluated (%.1f%%)",
+                rank,
+                done_tasks,
+                total_tasks,
+                100.0 * done_tasks / total_tasks,
+            )
 
     successful = 0
     penalized = 0
@@ -240,7 +250,6 @@ def run_optimization(
     best_fitness_ever = -float("inf")
     stagnant_generations = 0
 
-
     if cp is not None:
         logger.info("Resuming from compressed checkpoint at gen %d", cp["generation"])
         total_successful = cp.get("total_successful", 0)
@@ -270,7 +279,9 @@ def run_optimization(
 
     def _evaluate_all(candidates):
         nonlocal total_successful, total_penalized
-        batches = partition_batches(candidates, batch_size=max(4, len(candidates) // (mpi_size * 2)))
+        batches = partition_batches(
+            candidates, batch_size=max(4, len(candidates) // (mpi_size * 2))
+        )
         evaluated_all = []
         wave_succ = 0
         wave_pen = 0
@@ -293,7 +304,9 @@ def run_optimization(
                     b_idx += 1
 
             while b_idx < len(batches):
-                eval_b, b_stats = evaluate_batch_memory_optimized(batches[b_idx], pool, season, config, rank)
+                eval_b, b_stats = evaluate_batch_memory_optimized(
+                    batches[b_idx], pool, season, config, rank
+                )
                 evaluated_all.extend(eval_b)
                 wave_succ += b_stats["successful"]
                 wave_pen += b_stats["penalized"]
@@ -317,8 +330,17 @@ def run_optimization(
         record = stats.compile(pop)
         logbook.record(gen=0, nevals=len(pop), **record)
         log_step_metrics(
-            pop, hof, record, 0, config.design.names, config.operational.names,
-            season_days, succ, pen, total_successful, total_penalized,
+            pop,
+            hof,
+            record,
+            0,
+            config.design.names,
+            config.operational.names,
+            season_days,
+            succ,
+            pen,
+            total_successful,
+            total_penalized,
         )
         gens_log.append(0)
         max_log.append(record["max"])
@@ -340,16 +362,32 @@ def run_optimization(
         record = stats.compile(pop)
         logbook.record(gen=gen, nevals=len(offspring), **record)
         log_step_metrics(
-            pop, hof, record, gen, config.design.names, config.operational.names,
-            season_days, succ, pen, total_successful, total_penalized,
+            pop,
+            hof,
+            record,
+            gen,
+            config.design.names,
+            config.operational.names,
+            season_days,
+            succ,
+            pen,
+            total_successful,
+            total_penalized,
         )
 
         gens_log.append(gen)
         max_log.append(record["max"])
         avg_log.append(record["avg"])
 
-        logger.info("Gen %d/%d | Best: %.2f | Avg: %.2f | Valid: %d, Pen: %d",
-                    gen, num_generations, record["max"], record["avg"], succ, pen)
+        logger.info(
+            "Gen %d/%d | Best: %.2f | Avg: %.2f | Valid: %d, Pen: %d",
+            gen,
+            num_generations,
+            record["max"],
+            record["avg"],
+            succ,
+            pen,
+        )
 
         # Compressed checkpointing: keep latest + global best exclusively
         current_best = record["max"]
@@ -361,11 +399,13 @@ def run_optimization(
             stagnant_generations += 1
 
         if ga.early_stopping_patience > 0 and stagnant_generations >= ga.early_stopping_patience:
-            logger.info("Early stopping triggered: no fitness improvement for %d consecutive generations.", stagnant_generations)
+            logger.info(
+                "Early stopping triggered: no fitness improvement for %d consecutive generations.",
+                stagnant_generations,
+            )
             break
 
         if gen % ga.checkpoint_interval == 0 or gen == num_generations - 1 or is_global_best:
-
             payload = {
                 "season": season,
                 "ckpt_key": ckpt_sig,

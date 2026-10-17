@@ -76,7 +76,9 @@ def setup_logger(
     if rank == 0:
         ch = logging.StreamHandler()
         ch.setLevel(logging.INFO)
-        ch.setFormatter(ColoredFormatter("%(asctime)s | PID:%(process)-5d | %(levelname)-8s | %(message)s"))
+        ch.setFormatter(
+            ColoredFormatter("%(asctime)s | PID:%(process)-5d | %(levelname)-8s | %(message)s")
+        )
         log.addHandler(ch)
 
     return log
@@ -109,7 +111,9 @@ def init_tracking(
             logger.info("DagsHub tracking initialized for %s/%s", repo_owner, repo_name)
             return True
         except Exception as exc:
-            logger.warning("Could not initialize DagsHub (%s). Falling back to local MLflow tracking.", exc)
+            logger.warning(
+                "Could not initialize DagsHub (%s). Falling back to local MLflow tracking.", exc
+            )
 
     # Local MLflow fallback (never prompts or hangs)
     try:
@@ -122,8 +126,6 @@ def init_tracking(
     except Exception as exc:
         logger.warning("Local MLflow initialization failed (%s). Continuing without tracking.", exc)
         return False
-
-
 
 
 def sanitize_key(name: Any) -> str:
@@ -305,12 +307,14 @@ def plot_and_export(
         desc = units_map.get(k, "")
         report_lines.append(f"| `{k}` | **{v}** | {desc} |")
 
-    report_lines.extend([
-        "",
-        "## 2. Daily Operational Schedule (7 Representative Days)",
-        "| Day | Date | Mass Flow Limit (kg/s) | Startup Temp (°C) | Shutdown Temp (°C) |",
-        "| :--- | :--- | :--- | :--- | :--- |",
-    ])
+    report_lines.extend(
+        [
+            "",
+            "## 2. Daily Operational Schedule (7 Representative Days)",
+            "| Day | Date | Mass Flow Limit (kg/s) | Startup Temp (°C) | Shutdown Temp (°C) |",
+            "| :--- | :--- | :--- | :--- | :--- |",
+        ]
+    )
     for r in ops_rows:
         report_lines.append(
             f"| Day {r['Day']} | `{r['Date']}` | **{r.get('m_dot', '-')}** | "
@@ -341,4 +345,3 @@ def plot_and_export(
     logger.info("\n%s\nOptimal Solution (%s):\n%s\n%s", "=" * 40, season, table_str, "=" * 40)
 
     return sol
-

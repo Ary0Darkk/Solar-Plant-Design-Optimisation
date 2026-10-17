@@ -37,9 +37,7 @@ def get_season_days(
     """
     lookup = seasons_dict if seasons_dict is not None else SEASONS
     if season not in lookup:
-        raise ValueError(
-            f"Unknown season '{season}'. Available seasons: {list(lookup.keys())}"
-        )
+        raise ValueError(f"Unknown season '{season}'. Available seasons: {list(lookup.keys())}")
 
     dates = lookup[season]
     return [

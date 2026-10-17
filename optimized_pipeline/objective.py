@@ -42,11 +42,7 @@ def compute_daily_objective_value(
 
     # 3. Combined thermal loss cost (startup thermal + piping thermal loss + receiver loss)
     # Scaled by 40% (0.4) equivalent cycle efficiency
-    thermal_losses = (
-        sim_slice.pc_startup_thermal
-        + sim_slice.piping_loss
-        + sim_slice.receiver_loss
-    )
+    thermal_losses = sim_slice.pc_startup_thermal + sim_slice.piping_loss + sim_slice.receiver_loss
     thermal_loss_cost = float(np.dot(thermal_losses, prices_24h) * np.float32(0.4))
 
     net_val = revenue - parasitic_cost - thermal_loss_cost
@@ -57,4 +53,3 @@ def compute_daily_objective_value(
         return 0.0
 
     return net_val
-

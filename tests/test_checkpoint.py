@@ -45,7 +45,9 @@ def test_save_and_load_compressed_checkpoint(tmp_path: Path):
     assert file_path.exists()
 
     # Load with matching key
-    loaded = load_compressed_checkpoint(file_path, expected_key=ckpt_key, pop_size=2, chromosome_len=3)
+    loaded = load_compressed_checkpoint(
+        file_path, expected_key=ckpt_key, pop_size=2, chromosome_len=3
+    )
     assert loaded is not None
     assert loaded["generation"] == 1
     assert loaded["best_fitness_ever"] == 200.0
@@ -55,7 +57,9 @@ def test_save_and_load_compressed_checkpoint(tmp_path: Path):
 def test_load_nonexistent_checkpoint(tmp_path: Path):
     """Verify that loading a non-existent file returns None without raising."""
     file_path = tmp_path / "does_not_exist.pkl.gz"
-    loaded = load_compressed_checkpoint(file_path, expected_key="abc", pop_size=4, chromosome_len=10)
+    loaded = load_compressed_checkpoint(
+        file_path, expected_key="abc", pop_size=4, chromosome_len=10
+    )
     assert loaded is None
 
 
@@ -70,5 +74,7 @@ def test_load_signature_mismatch(tmp_path: Path):
     save_compressed_checkpoint(data, file_path)
 
     # Incompatible pop size and chromosome length
-    loaded = load_compressed_checkpoint(file_path, expected_key="wrong_key", pop_size=10, chromosome_len=20)
+    loaded = load_compressed_checkpoint(
+        file_path, expected_key="wrong_key", pop_size=10, chromosome_len=20
+    )
     assert loaded is None

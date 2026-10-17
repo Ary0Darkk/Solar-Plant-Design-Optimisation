@@ -43,10 +43,10 @@ class VariableBounds:
 DESIGN_BOUNDS = VariableBounds(
     names=(
         "specified_total_aperture",  # reflective area [m²]
-        "Row_Distance",              # pitch between rows [m] (guaranteed > W_aperture)
-        "ColperSCA",                 # modules per SCA
-        "W_aperture",                # aperture width [m]
-        "L_SCA",                     # collector length [m]
+        "Row_Distance",  # pitch between rows [m] (guaranteed > W_aperture)
+        "ColperSCA",  # modules per SCA
+        "W_aperture",  # aperture width [m]
+        "L_SCA",  # collector length [m]
     ),
     lb=(8000, 10, 2, 4, 50),
     ub=(12000, 25, 10, 8, 200),
@@ -56,8 +56,8 @@ DESIGN_BOUNDS = VariableBounds(
 # Daily 3 operational parameters
 OPERATIONAL_BOUNDS = VariableBounds(
     names=(
-        "m_dot",       # mass-flow limit [kg/s]
-        "T_startup",   # startup temperature [°C]
+        "m_dot",  # mass-flow limit [kg/s]
+        "T_startup",  # startup temperature [°C]
         "T_shutdown",  # shutdown temperature [°C] (guaranteed <= T_startup)
     ),
     lb=(2, 300, 250),
@@ -88,7 +88,6 @@ class GAParameters:
     early_stopping_patience: int = 15
 
 
-
 @dataclass
 class TariffConfig:
     """Tariff normalization and demand data paths."""
@@ -96,7 +95,9 @@ class TariffConfig:
     min_price: float = 3.0
     max_price: float = 8.0
     demand_file: Path = field(
-        default_factory=lambda: PROJECT_ROOT / "electricity_data" / "Yearly Demand Profile Haryana-Himanchal.xlsx"
+        default_factory=lambda: (
+            PROJECT_ROOT / "electricity_data" / "Yearly Demand Profile Haryana-Himanchal.xlsx"
+        )
     )
     cache_file: Path = field(
         default_factory=lambda: PROJECT_ROOT / "electricity_data" / "dynamic_price_data_haryana.csv"
@@ -171,4 +172,3 @@ class PipelineConfig:
 def get_pipeline_config() -> PipelineConfig:
     """Return a fresh default configuration instance."""
     return PipelineConfig()
-

@@ -66,7 +66,6 @@ def compute_tariff_from_demand(
 compute_tariff = compute_tariff_from_demand
 
 
-
 def get_shared_tariff(
     config: Optional[TariffConfig] = None,
     force_reload: bool = False,
