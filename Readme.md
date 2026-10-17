@@ -160,7 +160,7 @@ Solar-Plant-Design-Optimisation/
 ├── plots/GA_plots/                # High-resolution convergence plots (PNG/PDF)
 ├── results/GA_results/            # CSV, JSON, and Multi-sheet Excel summaries
 ├── simulation/                    # Weather dataset & Gurgaon plant config
-├── tests/                         # Comprehensive Pytest test suite (55 tests)
+├── tests/                         # Comprehensive Pytest test suite (61 tests)
 ├── config.yaml                    # Global YAML pipeline configuration
 ├── config.py                      # Backward-compatible configuration bridge
 ├── deap_ga_optimiser.py           # Backward-compatible API wrapper
