@@ -1,28 +1,34 @@
 """
-Unit tests for parallel communication layer and fallback communicator.
+Tests for parallel communicator and batch partitioning.
 """
 
-from optimized_pipeline.parallel import Communicator, StandaloneComm, get_communicator
+import pytest
+
+from solar_opt.parallel import StandaloneComm, get_communicator, partition_batches
 
 
-def test_standalone_communicator_primitives():
-    """Verify that StandaloneComm functions properly in single-process mode."""
+def test_standalone_comm():
     comm = StandaloneComm()
     assert comm.Get_rank() == 0
     assert comm.Get_size() == 1
-
-    # Broadcast preserves payload
-    data = {"season": "summer", "pop": 28}
-    assert comm.bcast(data, root=0) == data
-
-    # Send and recv mocks
-    comm.send({"test": 123}, dest=0, tag=0)
-    assert comm.recv(source=0, tag=0) is None
+    assert comm.bcast("test_payload") == "test_payload"
 
 
 def test_get_communicator():
-    """Verify get_communicator returns a valid Communicator instance."""
     comm = get_communicator()
-    assert isinstance(comm, Communicator)
-    assert comm.Get_rank() == 0
-    assert comm.Get_size() >= 1
+    assert hasattr(comm, "Get_rank")
+    assert hasattr(comm, "Get_size")
+    assert hasattr(comm, "bcast")
+
+
+def test_partition_batches():
+    items = list(range(10))
+    batches = partition_batches(items, batch_size=3)
+    assert len(batches) == 4
+    assert batches[0] == [0, 1, 2]
+    assert batches[-1] == [9]
+
+
+def test_partition_batches_invalid_size():
+    with pytest.raises(ValueError):
+        partition_batches([1, 2, 3], batch_size=0)

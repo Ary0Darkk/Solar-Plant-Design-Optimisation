@@ -8,27 +8,25 @@ on:
 
 jobs:
   test:
-    name: Lint & Test Suite
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          version: "latest"
-          enable-cache: true
+          python-version: "3.12"
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install Dependencies
+      - name: Install dependencies
         run: uv sync
 
-      - name: Code Quality & Linting
-        run: uv run ruff check .
+      - name: Code formatting & linting check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
 
-      - name: Run Pytest Suite
+      - name: Run Pytest test suite
         run: uv run pytest -v

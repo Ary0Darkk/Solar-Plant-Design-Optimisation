@@ -1,3 +1,1 @@
-"""
-Test suite for optimized_pipeline package.
-"""
+"""Unit and integration test suite for solar-opt."""

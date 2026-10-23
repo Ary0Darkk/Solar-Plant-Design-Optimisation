@@ -1,25 +1,31 @@
 """
-Unit tests for weather and representative day indexing.
+Tests for seasonal calendar and weather day mapping.
 """
 
 import pytest
 
-from optimized_pipeline.weather import get_season_days
+from solar_opt.weather import get_season_days
 
 
-def test_get_season_days_count():
-    """Verify that each season returns 7 representative day objects."""
-    for s in ["winter", "summer", "monsoon", "post"]:
-        days = get_season_days(s)
+def test_get_season_days_valid():
+    winter_days = get_season_days("winter")
+    assert len(winter_days) == 7
+    first = winter_days[0]
+    assert first["month"] == 1
+    assert first["day"] == 8
+    assert first["local_index"] == 0
+    assert first["day_index"] == 7  # Jan 8 is 8th day of year (0-indexed: 7)
+
+
+def test_get_season_days_all_seasons():
+    for season in ["winter", "summer", "monsoon", "post"]:
+        days = get_season_days(season)
         assert len(days) == 7
-        for idx, d in enumerate(days):
-            assert d["local_index"] == idx
-            assert 0 <= d["day_index"] <= 364
-            assert 1 <= d["month"] <= 12
-            assert 1 <= d["day"] <= 31
+        for d in days:
+            assert 0 <= d["day_index"] < 365
+            assert 0 <= d["local_index"] < 7
 
 
-def test_invalid_season():
-    """Verify that requesting an unknown season raises ValueError."""
-    with pytest.raises(ValueError):
-        get_season_days("spring")
+def test_get_season_days_unknown_raises():
+    with pytest.raises(ValueError, match="Unknown season"):
+        get_season_days("autumn")

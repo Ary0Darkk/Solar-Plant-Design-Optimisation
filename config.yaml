@@ -17,7 +17,7 @@ ga:
   random_seed: 41
   resume_from_checkpoint: true
   checkpoint_interval: 1
-  # Child process recycling to clear PySAM C-level memory leaks
+  # Worker process recycling to clear PySAM C-level memory leaks
   max_tasks_per_child: 25
   # Explicit garbage collection after each evaluation wave
   enable_gc_collection: true
@@ -49,7 +49,7 @@ simulation:
 design_bounds:
   # Total reflective aperture area [m²]
   specified_total_aperture: [8000, 12000]
-  # Pitch distance between collector rows [m] (must exceed W_aperture)
+  # Pitch distance between collector rows [m] (must exceed W_aperture + 3.5m)
   Row_Distance: [10, 25]
   # Solar Collector Assemblies (SCAs) per loop
   ColperSCA: [2, 10]
@@ -67,7 +67,7 @@ operational_bounds:
   m_dot: [2, 12]
   # Field startup temperature threshold [°C]
   T_startup: [300, 380]
-  # Field shutdown temperature threshold [°C] (must be <= T_startup)
+  # Field shutdown temperature threshold [°C] (must satisfy T_startup - T_shutdown >= 15°C)
   T_shutdown: [250, 300]
 
 # ------------------------------------------------------------------------------

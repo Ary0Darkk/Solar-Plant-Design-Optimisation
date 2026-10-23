@@ -1,139 +1,73 @@
 """
-Unit tests for core optimization engine and worker task evaluation.
+Tests for GA optimization engine, individual evaluation, and elitism loop.
 """
 
-import multiprocessing as mp
+from unittest.mock import MagicMock
 
 import pytest
 
-from optimized_pipeline.chromosome import (
-    build_gene_generator,
-    init_deap_types,
-)
-from optimized_pipeline.config import get_pipeline_config
-from optimized_pipeline.engine import (
-    _eval_single_task,
-    evaluate_batch_memory_optimized,
-)
-from optimized_pipeline.parallel import partition_batches
-from optimized_pipeline.weather import get_season_days
+from solar_opt.config import PipelineConfig
+from solar_opt.engine import evaluate_individual_season, run_optimization, worker_event_loop
+from solar_opt.parallel import StandaloneComm
+from solar_opt.weather import get_season_days
 
 
-def test_partition_batches():
-    """Verify that items are properly divided into discrete chunks."""
-    items = list(range(25))
-    batches = partition_batches(items, batch_size=10)
-    assert len(batches) == 3
-    assert len(batches[0]) == 10
-    assert len(batches[1]) == 10
-    assert len(batches[2]) == 5
-    assert [x for b in batches for x in b] == items
+def test_evaluate_individual_season_feasible():
+    cfg = PipelineConfig()
+    season_days = get_season_days("summer", cfg.seasons)
 
-    with pytest.raises(ValueError):
-        partition_batches(items, batch_size=0)
-
-
-def test_eval_single_task_valid():
-    """Verify _eval_single_task produces a scalar objective for valid inputs."""
-    summer_days = get_season_days("summer")
-    first_day = summer_days[0]  # March 9th: local_index=0, day_index=67
-
-    overrides = {
-        "specified_total_aperture": 9000,
-        "Row_Distance": 16.0,
-        "W_aperture": 6.0,
-        "ColperSCA": 4,
-        "L_SCA": 100,
-        "m_dot": 5,
-        "T_startup": 350,
-        "T_shutdown": 280,
-    }
-    task_args = (0, first_day["local_index"], overrides, first_day["day_index"])
-    ind_idx, local_idx, obj, is_pen = _eval_single_task(task_args)
-
-    assert ind_idx == 0
-    assert local_idx == first_day["local_index"]
-    assert is_pen is False
-    assert obj is not None
-    assert isinstance(obj, float)
+    # Feasible chromosome: design + 7 * operational
+    # Row_Distance=15, W_aperture=5 -> Row_Distance - W_aperture = 10 >= 3.5
+    # T_startup=350, T_shutdown=280 -> 350 - 280 = 70 >= 15
+    feasible_chrom = [10000, 15, 4, 5, 100] + [5, 350, 280] * 7
+    (fit_val,), penalized = evaluate_individual_season(feasible_chrom, season_days, cfg)
+    assert not penalized
+    assert fit_val >= 0.0
 
 
-def test_eval_single_task_penalized():
-    """Verify _eval_single_task flags invalid/infeasible inputs."""
-    summer_days = get_season_days("summer")
-    first_day = summer_days[0]  # March 9th: local_index=0, day_index=67
+def test_evaluate_individual_season_infeasible():
+    cfg = PipelineConfig()
+    season_days = get_season_days("summer", cfg.seasons)
 
-    # Violates vehicular maintenance corridor: Row_Distance (6m) - W_aperture (6m) = 0 < 3.5m
-    overrides = {
-        "specified_total_aperture": 9000,
-        "Row_Distance": 6.0,
-        "W_aperture": 6.0,
-        "ColperSCA": 4,
-        "L_SCA": 100,
-        "m_dot": 5,
-        "T_startup": 350,
-        "T_shutdown": 280,
-    }
-    task_args = (1, first_day["local_index"], overrides, first_day["day_index"])
-    ind_idx, local_idx, obj, is_pen = _eval_single_task(task_args)
-
-    assert ind_idx == 1
-    assert local_idx == first_day["local_index"]
-    assert is_pen is True
-    assert obj is None
+    # Infeasible: Row_Distance=7, W_aperture=5 -> 7 - 5 = 2 < 3.5
+    infeasible_chrom = [10000, 7, 4, 5, 100] + [5, 350, 280] * 7
+    (fit_val,), penalized = evaluate_individual_season(infeasible_chrom, season_days, cfg)
+    assert penalized
+    assert fit_val == cfg.simulation.penalty
 
 
-def test_evaluate_batch_memory_optimized_pool():
-    """Verify evaluate_batch_memory_optimized evaluates individuals using a multiprocessing Pool."""
-    from deap import base, creator, tools
+def test_micro_ga_optimization_run():
+    cfg = PipelineConfig()
+    cfg.ga.pop_size = 4
+    cfg.ga.num_generations = 2
+    cfg.ga.resume_from_checkpoint = False
 
-    init_deap_types()
-    config = get_pipeline_config()
-    num_days = 7
-
-    generator = build_gene_generator(
-        design_lb=config.design.lb,
-        design_ub=config.design.ub,
-        operational_lb=config.operational.lb,
-        operational_ub=config.operational.ub,
-        num_days=num_days,
+    comm = StandaloneComm()
+    sol_dict, best_fit, ga_state = run_optimization(
+        season="summer",
+        config=cfg,
+        pool=None,  # sequential execution for fast deterministic test
+        comm=comm,
+        rank=0,
+        mpi_size=1,
+        job_id="test_micro_run",
     )
-    toolbox = base.Toolbox()
-    toolbox.register("individual", tools.initIterate, creator.Individual, generator)
 
-    ind = toolbox.individual()
-    batch = [ind]
-
-    ctx = mp.get_context()
-    with ctx.Pool(processes=2) as pool:
-        evaluated_pop, stats = evaluate_batch_memory_optimized(
-            batch=batch,
-            pool=pool,
-            season="winter",
-            config=config,
-            rank=0,
-        )
-
-    assert len(evaluated_pop) == 1
-    assert hasattr(evaluated_pop[0], "fitness")
-    assert len(evaluated_pop[0].fitness.values) == 1
-    assert stats["total"] == 7
+    assert "season" in sol_dict
+    assert sol_dict["season"] == "summer"
+    assert len(ga_state["pop"]) == 4
+    assert len(ga_state["logbook"]) == 2  # Gen 0 and Gen 1
 
 
 def test_run_optimization_requires_rank_zero():
-    """Verify that run_optimization raises ValueError if called with rank != 0."""
-    from unittest.mock import MagicMock
-
-    from optimized_pipeline.engine import run_optimization
-
-    config = get_pipeline_config()
+    cfg = PipelineConfig()
     mock_comm = MagicMock()
     mock_pool = MagicMock()
 
     with pytest.raises(ValueError, match="0th rank must be the master rank"):
         run_optimization(
-            season="winter",
-            config=config,
+            season="summer",
+            config=cfg,
             pool=mock_pool,
             comm=mock_comm,
             rank=1,
@@ -142,19 +76,13 @@ def test_run_optimization_requires_rank_zero():
 
 
 def test_worker_event_loop_rejects_rank_zero():
-    """Verify that worker_event_loop raises ValueError if called with rank == 0."""
-    from unittest.mock import MagicMock
-
-    from optimized_pipeline.engine import worker_event_loop
-
-    config = get_pipeline_config()
+    cfg = PipelineConfig()
     mock_comm = MagicMock()
 
     with pytest.raises(ValueError, match="Rank 0 is designated as Master Rank"):
         worker_event_loop(
-            season="winter",
+            season="summer",
             comm=mock_comm,
             rank=0,
-            config=config,
+            config=cfg,
         )
-

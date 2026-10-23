@@ -1,22 +1,38 @@
-# env variables
-.env
-.env.*
-!.env.example
-.venv
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# cache
-__pycache__
-simulation/__pycache__
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
 
-# ruff-linter cache
-.ruff_cache
+# Pytest & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
 
-# local cache folders
-checkpoints
-results
-logs
-sim_cache
-plots
-mlflow.db
+# Ruff
+.ruff_cache/
+
+# Checkpoints & Artifacts
+checkpoints/
+logs/
+plots/
+results/
+*.pkl
+*.pkl.gz
+*.db
 mlruns/
-.pytest_cache/
+.trash/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets & Environment variables
+.env
