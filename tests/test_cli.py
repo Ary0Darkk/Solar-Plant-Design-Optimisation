@@ -8,6 +8,7 @@ from solar_opt.cli import parse_arguments, resolve_worker_count
 def test_parse_arguments_defaults():
     args = parse_arguments([])
     assert args.season == "summer"
+    assert args.experiment == "CSP_Seasonal_GA"
     assert args.generations is None
     assert args.pop_size is None
     assert args.workers is None

@@ -91,6 +91,12 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Path to YAML configuration file (default: config.yaml in project root)",
     )
     parser.add_argument(
+        "--experiment",
+        type=str,
+        default="CSP_Seasonal_GA",
+        help="MLflow / DagsHub experiment name (default: CSP_Seasonal_GA)",
+    )
+    parser.add_argument(
         "--no-tracking",
         action="store_true",
         help="Disable remote DagsHub/MLflow experiment tracking",
@@ -244,7 +250,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     if rank == 0:
         logger.info("[Rank 0: Master] Initializing Master GA optimization...")
         if not args.no_tracking:
-            init_tracking()
+            init_tracking(experiment_name=args.experiment)
 
         try:
             run_name = f"{run_tags.get('job_name', f'GA_Opt_{args.season}')}"

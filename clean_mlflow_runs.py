@@ -21,7 +21,42 @@ from mlflow.tracking import MlflowClient
 
 load_dotenv()
 
-DEFAULT_EXPERIMENT = "CSP_Plant_Optimization"
+DEFAULT_EXPERIMENT = "CSP_Seasonal_GA"
+
+
+def list_experiments(
+    tracking_uri: str,
+    username: str = "aryanvj787",
+    token: str = "",
+) -> int:
+    """List all experiments and their run counts."""
+    if token:
+        os.environ["MLFLOW_TRACKING_USERNAME"] = username
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = token
+        os.environ["DAGSHUB_USER_TOKEN"] = token
+
+    os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
+    client = MlflowClient(tracking_uri=tracking_uri)
+
+    try:
+        experiments = client.search_experiments()
+    except Exception as exc:
+        print(f"Error querying experiments ({tracking_uri}): {exc}")
+        return 1
+
+    print(f"\nConnected to: {tracking_uri}")
+    print(f"Found {len(experiments)} experiment(s):\n")
+    print(f"{'ID':<6} {'Experiment Name':<30} {'Stage':<10} {'Runs'}")
+    print("-" * 60)
+    for exp in experiments:
+        try:
+            runs = client.search_runs(experiment_ids=[exp.experiment_id])
+            run_count = len(runs)
+        except Exception:
+            run_count = 0
+        print(f"{exp.experiment_id:<6} {exp.name:<30} {exp.lifecycle_stage:<10} {run_count}")
+    print("-" * 60 + "\n")
+    return 0
 
 
 def clean_runs(
@@ -71,6 +106,11 @@ def clean_runs(
 def main():
     parser = argparse.ArgumentParser(description="Delete runs inside a specific MLflow experiment.")
     parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all experiments and run counts",
+    )
+    parser.add_argument(
         "--experiment",
         default=DEFAULT_EXPERIMENT,
         help=f"Experiment name to clean (default: {DEFAULT_EXPERIMENT})",
@@ -98,6 +138,8 @@ def main():
     if args.local:
         db_path = Path("results/mlflow.db").resolve()
         uri = f"sqlite:///{db_path.as_posix()}"
+        if args.list:
+            sys.exit(list_experiments(tracking_uri=uri))
         print(f"Cleaning local runs in {uri}...")
         sys.exit(clean_runs(tracking_uri=uri, experiment_name=args.experiment))
 
@@ -118,6 +160,9 @@ def main():
             "To clean local runs instead, pass --local."
         )
         sys.exit(1)
+
+    if args.list:
+        sys.exit(list_experiments(tracking_uri=uri, token=token or ""))
 
     print(f"Connecting to MLflow at {uri}...")
     sys.exit(clean_runs(tracking_uri=uri, experiment_name=args.experiment, token=token or ""))

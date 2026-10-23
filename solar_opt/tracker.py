@@ -63,7 +63,7 @@ def setup_logger(
 
 def init_tracking(
     enabled: bool = True,
-    experiment_name: str = "CSP_Plant_Optimization",
+    experiment_name: str = "CSP_Seasonal_GA",
 ) -> bool:
     """Initialize MLflow / DagsHub tracking with graceful offline SQLite fallback."""
     if not enabled:
@@ -87,7 +87,6 @@ def init_tracking(
         or os.environ.get("MLFLOW_TRACKING_PASSWORD")
     )
     dagshub_repo = os.environ.get("DAGSHUB_REPO_NAME", "NYS-Design-Optimisation-using-PySAM")
-
     custom_uri = os.environ.get("MLFLOW_TRACKING_URI")
 
     # 1. Explicit SQLite URI takes priority if requested
@@ -111,26 +110,21 @@ def init_tracking(
         except Exception:
             pass
 
-    # 2. Custom remote or DagsHub URI
-    if custom_uri and custom_uri.startswith(("http://", "https://")):
-        try:
-            if dagshub_token:
-                os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_user
-                os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
-            mlflow.set_tracking_uri(custom_uri)
-            mlflow.set_experiment(experiment_name)
-            logger.info("Remote MLflow tracking connected via URI: %s", custom_uri)
-            return True
-        except Exception as exc:
-            logger.warning("Failed to connect to remote MLflow URI (%s): %s", custom_uri, exc)
-
-    # 3. DagsHub client integration if token available
+    # 2. DagsHub client integration with MLflow and file upload support
     if dagshub_token and dagshub_user:
         try:
             import dagshub
+            import dagshub.auth
+
+            try:
+                dagshub.auth.add_app_token(dagshub_token)
+            except Exception:
+                pass
 
             os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_user
             os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+            os.environ["DAGSHUB_USER_TOKEN"] = dagshub_token
+
             dagshub.init(
                 repo_owner=dagshub_user,
                 repo_name=dagshub_repo,
@@ -138,13 +132,29 @@ def init_tracking(
             )
             mlflow.set_experiment(experiment_name)
             logger.info(
-                "Remote MLflow tracking connected via DagsHub (%s/%s)", dagshub_user, dagshub_repo
+                "Remote MLflow tracking connected via DagsHub (%s/%s) [Experiment: %s]",
+                dagshub_user,
+                dagshub_repo,
+                experiment_name,
             )
             return True
         except Exception as exc:
             logger.warning(
-                "Failed to connect to DagsHub MLflow (%s). Falling back to local tracking.", exc
+                "Failed to initialize DagsHub MLflow (%s). Trying custom URI fallback.", exc
             )
+
+    # 3. Custom remote URI fallback
+    if custom_uri and custom_uri.startswith(("http://", "https://")):
+        try:
+            if dagshub_token:
+                os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_user
+                os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+            mlflow.set_tracking_uri(custom_uri)
+            mlflow.set_experiment(experiment_name)
+            logger.info("Remote MLflow tracking connected via URI: %s [Experiment: %s]", custom_uri, experiment_name)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to connect to remote MLflow URI (%s): %s", custom_uri, exc)
 
     # 3. Local SQLite fallback
     try:
@@ -433,6 +443,56 @@ def plot_and_export(
                 mlflow.log_artifact(str(plot_path_pdf), artifact_path="plots")
         except Exception:
             pass
+
+    # 8. Store results & plots directly into DagsHub repository data storage
+    dagshub_user = (
+        os.environ.get("DAGSHUB_USER_NAME")
+        or os.environ.get("MLFLOW_TRACKING_USERNAME")
+        or "aryanvj787"
+    )
+    dagshub_token = (
+        os.environ.get("DAGSHUB_USER_TOKEN")
+        or os.environ.get("DAGSHUB_TOKEN")
+        or os.environ.get("MLFLOW_TRACKING_PASSWORD")
+    )
+    dagshub_repo = os.environ.get("DAGSHUB_REPO_NAME", "NYS-Design-Optimisation-using-PySAM")
+
+    if dagshub_token and dagshub_user and dagshub_repo:
+        try:
+            import dagshub
+
+            repo_full = f"{dagshub_user}/{dagshub_repo}"
+            files_to_upload = [
+                csv_path,
+                json_path,
+                report_path,
+                logbook_path,
+                plot_path_png,
+                plot_path_pdf,
+            ]
+            if excel_path.exists():
+                files_to_upload.append(excel_path)
+
+            for fpath in files_to_upload:
+                if fpath.exists():
+                    try:
+                        rel_path = str(fpath.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                        dagshub.upload_files(
+                            repo=repo_full,
+                            local_path=str(fpath),
+                            remote_path=rel_path,
+                            commit_message=f"Store {season} optimization artifact: {fpath.name}",
+                        )
+                    except Exception as upload_err:
+                        logger.debug(
+                            "Failed uploading %s to DagsHub repo: %s", fpath.name, upload_err
+                        )
+            logger.info(
+                "Successfully synced optimization data and plots to DagsHub repository (%s)",
+                repo_full,
+            )
+        except Exception as exc:
+            logger.debug("DagsHub data repository sync skipped: %s", exc)
 
     table_str = tb.tabulate(sol.items(), tablefmt="grid")
     logger.info("\n%s\nOptimal Solution (%s):\n%s\n%s", "=" * 40, season, table_str, "=" * 40)
