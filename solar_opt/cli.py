@@ -13,7 +13,7 @@ import mlflow
 from .config import get_pipeline_config
 from .engine import run_optimization, worker_event_loop
 from .parallel import get_communicator
-from .tracker import init_tracking, setup_logger
+from .tracker import init_tracking, log_run_params, setup_logger
 
 
 def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -245,16 +245,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
             with mlflow.start_run(run_name=run_name):
                 mlflow.set_tags(run_tags)
-                mlflow.log_params(
-                    {
-                        "season": args.season,
-                        "pop_size": config.ga.pop_size,
-                        "generations": config.ga.num_generations,
-                        "workers_per_rank": workers,
-                        "max_tasks_per_child": config.ga.max_tasks_per_child,
-                        "job_id": str(job_id),
-                    }
-                )
+                log_run_params(config=config, season=args.season, workers=workers, job_id=job_id)
 
                 ctx = mp.get_context()
                 try:

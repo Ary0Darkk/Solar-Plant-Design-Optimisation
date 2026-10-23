@@ -61,8 +61,14 @@ def setup_logger(
     return log
 
 
-def init_tracking(experiment_name: str = "CSP_Plant_Optimization") -> bool:
+def init_tracking(
+    enabled: bool = True,
+    experiment_name: str = "CSP_Plant_Optimization",
+) -> bool:
     """Initialize MLflow / DagsHub tracking with graceful offline SQLite fallback."""
+    if not enabled:
+        return False
+
     try:
         from dotenv import load_dotenv
 
@@ -70,11 +76,35 @@ def init_tracking(experiment_name: str = "CSP_Plant_Optimization") -> bool:
     except Exception:
         pass
 
-    dagshub_user = os.environ.get("DAGSHUB_USER_NAME")
-    dagshub_token = os.environ.get("DAGSHUB_TOKEN")
+    dagshub_user = (
+        os.environ.get("DAGSHUB_USER_NAME")
+        or os.environ.get("MLFLOW_TRACKING_USERNAME")
+        or "aryanvj787"
+    )
+    dagshub_token = (
+        os.environ.get("DAGSHUB_USER_TOKEN")
+        or os.environ.get("DAGSHUB_TOKEN")
+        or os.environ.get("MLFLOW_TRACKING_PASSWORD")
+    )
     dagshub_repo = os.environ.get("DAGSHUB_REPO_NAME", "Solar-Plant-Design-Optimisation")
 
-    if dagshub_user and dagshub_token:
+    custom_uri = os.environ.get("MLFLOW_TRACKING_URI")
+
+    # 1. Custom remote or DagsHub URI
+    if custom_uri and custom_uri.startswith(("http://", "https://")):
+        try:
+            if dagshub_token:
+                os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_user
+                os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+            mlflow.set_tracking_uri(custom_uri)
+            mlflow.set_experiment(experiment_name)
+            logger.info("Remote MLflow tracking connected via URI: %s", custom_uri)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to connect to remote MLflow URI (%s): %s", custom_uri, exc)
+
+    # 2. DagsHub client integration if token available
+    if dagshub_token and dagshub_user:
         try:
             import dagshub
 
@@ -93,14 +123,66 @@ def init_tracking(experiment_name: str = "CSP_Plant_Optimization") -> bool:
                 "Failed to connect to DagsHub MLflow (%s). Falling back to local tracking.", exc
             )
 
-    # Local fallback
-    local_db_dir = PROJECT_ROOT / "results"
-    local_db_dir.mkdir(parents=True, exist_ok=True)
-    sqlite_uri = f"sqlite:///{local_db_dir / 'mlflow.db'}"
-    mlflow.set_tracking_uri(sqlite_uri)
-    mlflow.set_experiment(experiment_name)
-    logger.info("Using local SQLite MLflow tracking: %s", sqlite_uri)
-    return False
+    # 3. Local SQLite fallback
+    try:
+        db_path = PROJECT_ROOT / "results" / "mlflow.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        sqlite_uri = f"sqlite:///{db_path.as_posix()}"
+        os.environ["MLFLOW_TRACKING_URI"] = sqlite_uri
+        mlflow.set_tracking_uri(sqlite_uri)
+        mlflow.set_experiment(experiment_name)
+        logger.info("Local MLflow SQLite tracking active at: %s", sqlite_uri)
+        return True
+    except Exception as exc:
+        logger.warning("Local MLflow initialization failed (%s). Continuing without tracking.", exc)
+        return False
+
+
+def log_run_params(
+    config: Any,
+    season: str,
+    workers: int,
+    job_id: Optional[str] = None,
+) -> None:
+    """Log pipeline configuration hyperparameters and physical bounds to active MLflow run."""
+    if not mlflow.active_run():
+        return
+
+    try:
+        params = {
+            "season": str(season),
+            "pop_size": int(config.ga.pop_size),
+            "generations": int(config.ga.num_generations),
+            "tournament_size": int(config.ga.tournament_size),
+            "hall_of_fame_size": int(config.ga.hall_of_fame_size),
+            "cxpb": float(config.ga.cxpb),
+            "mutpb": float(config.ga.mutpb),
+            "indpb": float(config.ga.indpb),
+            "random_seed": int(config.ga.random_seed),
+            "workers": int(workers),
+            "early_stopping_patience": int(config.ga.early_stopping_patience),
+            "tariff/min_price": float(config.tariff.min_price),
+            "tariff/max_price": float(config.tariff.max_price),
+            "simulation/model": str(config.simulation.model_name),
+            "simulation/penalty": float(config.simulation.penalty),
+        }
+        if job_id:
+            params["job_id"] = str(job_id)
+
+        # Log physical design and operational bounds
+        for name, low, high in zip(config.design.names, config.design.lb, config.design.ub):
+            params[f"bounds/design/{sanitize_key(name)}/min"] = low
+            params[f"bounds/design/{sanitize_key(name)}/max"] = high
+
+        for name, low, high in zip(
+            config.operational.names, config.operational.lb, config.operational.ub
+        ):
+            params[f"bounds/operational/{sanitize_key(name)}/min"] = low
+            params[f"bounds/operational/{sanitize_key(name)}/max"] = high
+
+        mlflow.log_params(params)
+    except Exception as exc:
+        logger.debug("Failed logging parameters to MLflow: %s", exc)
 
 
 def log_step_metrics(
@@ -306,9 +388,16 @@ def plot_and_export(
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))
 
-    # 7. Log all artifacts to MLflow if active
+    # 7. Log all summary metrics & artifacts to MLflow if active
     if mlflow.active_run():
         try:
+            mlflow.log_metric("final/best_fitness", float(best_fitness))
+            mlflow.log_metric("final/initial_fitness", float(initial_fit))
+            mlflow.log_metric("final/optimization_gain", float(fit_gain))
+            mlflow.log_metric("final/total_generations", float(len(gens)))
+            for k, v in design_dict.items():
+                mlflow.log_metric(f"final/design/{sanitize_key(k)}", float(v))
+
             mlflow.log_artifact(str(csv_path), artifact_path="results")
             mlflow.log_artifact(str(json_path), artifact_path="results")
             mlflow.log_artifact(str(report_path), artifact_path="results")
