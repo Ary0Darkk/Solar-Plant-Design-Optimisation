@@ -5,8 +5,16 @@ Command-Line Interface (CLI) and execution orchestration.
 import argparse
 import multiprocessing as mp
 import os
+import sys
 from datetime import datetime
 from typing import List, Optional
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 import mlflow
 

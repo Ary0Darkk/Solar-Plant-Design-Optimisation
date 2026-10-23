@@ -86,11 +86,32 @@ def init_tracking(
         or os.environ.get("DAGSHUB_TOKEN")
         or os.environ.get("MLFLOW_TRACKING_PASSWORD")
     )
-    dagshub_repo = os.environ.get("DAGSHUB_REPO_NAME", "Solar-Plant-Design-Optimisation")
+    dagshub_repo = os.environ.get("DAGSHUB_REPO_NAME", "NYS-Design-Optimisation-using-PySAM")
 
     custom_uri = os.environ.get("MLFLOW_TRACKING_URI")
 
-    # 1. Custom remote or DagsHub URI
+    # 1. Explicit SQLite URI takes priority if requested
+    if custom_uri and "sqlite" in custom_uri:
+        try:
+            db_path = PROJECT_ROOT / "results" / "mlflow.db"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            mlflow.set_tracking_uri(custom_uri)
+            mlflow.set_experiment(experiment_name)
+            logger.info("Local MLflow SQLite tracking active at: %s", custom_uri)
+            return True
+        except Exception as exc:
+            logger.warning("Local MLflow initialization failed (%s). Continuing without tracking.", exc)
+            return False
+
+    if not dagshub_token:
+        try:
+            import dagshub.auth
+
+            dagshub_token = dagshub.auth.get_token()
+        except Exception:
+            pass
+
+    # 2. Custom remote or DagsHub URI
     if custom_uri and custom_uri.startswith(("http://", "https://")):
         try:
             if dagshub_token:
@@ -103,11 +124,13 @@ def init_tracking(
         except Exception as exc:
             logger.warning("Failed to connect to remote MLflow URI (%s): %s", custom_uri, exc)
 
-    # 2. DagsHub client integration if token available
+    # 3. DagsHub client integration if token available
     if dagshub_token and dagshub_user:
         try:
             import dagshub
 
+            os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_user
+            os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
             dagshub.init(
                 repo_owner=dagshub_user,
                 repo_name=dagshub_repo,

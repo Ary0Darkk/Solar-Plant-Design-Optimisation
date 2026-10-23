@@ -42,13 +42,14 @@ def test_init_tracking_local_sqlite(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("DAGSHUB_USER_TOKEN", raising=False)
     monkeypatch.delenv("DAGSHUB_TOKEN", raising=False)
     monkeypatch.delenv("MLFLOW_TRACKING_PASSWORD", raising=False)
-    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    sqlite_db = tmp_path / "results" / "mlflow.db"
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{sqlite_db.as_posix()}")
 
     success = init_tracking(enabled=True, experiment_name="Test_Local_Exp")
     assert success is True
     uri = mlflow.get_tracking_uri()
     assert uri.startswith("sqlite:///")
-    assert (tmp_path / "results" / "mlflow.db").exists()
+    assert sqlite_db.exists()
 
 
 def test_log_run_params_and_step_metrics(tmp_path: Path, monkeypatch):
