@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "solar-opt"
+version = "3.1.0"
+description = "Production-Grade Concentrated Solar Power (CSP) Parabolic Trough Design & Season-Wise GA Optimization Suite"
+readme = "Readme.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "dagshub>=0.6.3",
+    "deap>=1.4.3",
+    "matplotlib>=3.10.0",
+    "mlflow>=3.6.0",
+    "mpi4py>=4.0.0",
+    "nrel-pysam>=7.1.0",
+    "openpyxl>=3.1.5",
+    "pandas>=2.2.0",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+    "tabulate>=0.9.0",
+]
+
+[project.scripts]
+solar-opt = "solar_opt.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0",
+    "ruff>=0.14.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["solar_opt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

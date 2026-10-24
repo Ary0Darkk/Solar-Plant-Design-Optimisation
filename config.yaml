@@ -1,0 +1,75 @@
+# ==============================================================================
+# Concentrated Solar Power (CSP) GA Optimization Configuration
+# ==============================================================================
+
+system:
+  project_name: "Solar-Plant-Design-Optimisation"
+  log_level: "INFO"
+  seed: 41
+  scratch_dir: "scratch"
+
+simulation:
+  model_name: "PhysicalTroughNone"
+  weather_file: "simulation/28.428_77.159_28.428_77.159_himawari_60_2020.csv"
+  plant_config_file: "simulation/Gurgaon_plant.json"
+  max_simulation_workers: 112
+  worker_recycle_rate: 25
+
+tariff:
+  source_file: "electricity_data/dynamic_price_data_haryana.csv"
+  demand_file: "electricity_data/Yearly Demand Profile Haryana-Himanchal.xlsx"
+  min_price: 3.0    # INR/kWh
+  max_price: 8.0    # INR/kWh
+
+seasons:
+  winter:
+    name: "Winter"
+    start_month: 1
+    start_day: 8
+    num_days: 7
+  summer:
+    name: "Summer"
+    start_month: 5
+    start_day: 9
+    num_days: 7
+  monsoon:
+    name: "Monsoon"
+    start_month: 7
+    start_day: 15
+    num_days: 7
+  post:
+    name: "Post-Monsoon"
+    start_month: 10
+    start_day: 15
+    num_days: 7
+
+bounds:
+  design:
+    specified_total_aperture: [8000.0, 12000.0]  # m²
+    Row_Distance: [10.0, 25.0]                   # m
+    ColperSCA: [2, 10]                           # integer count
+    W_aperture: [4.0, 8.0]                       # m
+    L_SCA: [50.0, 200.0]                         # m
+  operational:
+    m_dot: [2.0, 12.0]                           # kg/s
+    T_startup: [300.0, 380.0]                    # °C
+    T_shutdown: [250.0, 300.0]                   # °C
+
+ga:
+  num_generations: 100
+  pop_size: 112
+  crossover_prob: 0.8
+  mutation_prob: 0.2
+  eta_c: 20.0
+  eta_m: 20.0
+  tournament_size: 3
+  elitism_count: 2
+  max_tasks_per_child: 25
+
+tracking:
+  enabled: true
+  experiment_name: "CSP_Seasonal_GA"
+  dagshub_repo: "aryanvj787/NYS-Design-Optimisation-using-PySAM"
+  dagshub_user: "aryanvj787"
+  save_artifacts: true
+  dpi: 300
