@@ -1,0 +1,51 @@
+#!/bin/bash
+#PBS -N CSP_GA_Opt
+#PBS -l select=1:ncpus=112:mpiprocs=1
+#PBS -l walltime=24:00:00
+#PBS -q standard
+#PBS -j oe
+#PBS -o logs/pbs_${PBS_JOBID}.log
+
+# ==============================================================================
+# Unified HPC PBS Batch Script for CSP Seasonal GA Optimization
+# ==============================================================================
+
+cd "$PBS_O_WORKDIR" || exit 1
+mkdir -p logs results/GA_results plots/GA_plots
+
+# Load system Python/MPI environment (customize for cluster)
+# module load python/3.12 openmpi/4.1
+
+# Activate virtual environment
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+fi
+
+# Load environment secrets if .env exists
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
+SEASON=${SEASON:-summer}
+WORKERS=${PBS_NCPUS:-112}
+
+echo "=========================================================="
+echo "Job ID:    $PBS_JOBID"
+echo "Host:      $(hostname)"
+echo "CPUs:      $WORKERS"
+echo "Season:    $SEASON"
+echo "Start:     $(date)"
+echo "=========================================================="
+
+if [ "$SEASON" = "all" ]; then
+    for s in winter summer monsoon post; do
+        echo ">>> Launching GA optimization for season: $s"
+        python main.py --season "$s" --workers "$WORKERS" --job-id "$PBS_JOBID"
+    done
+else
+    python main.py --season "$SEASON" --workers "$WORKERS" --job-id "$PBS_JOBID"
+fi
+
+echo "Job finished at: $(date)"
