@@ -80,7 +80,7 @@ class CompactCSPPlantSimulator:
 
         weather_file = self._resolve_path(self.config.weather_file)
         if weather_file.exists():
-            self._model.SolarField.solar_resource_file_entry = str(weather_file.resolve())
+            self._model.Weather.file_name = str(weather_file.resolve())
 
     def run_daily_simulation(
         self,

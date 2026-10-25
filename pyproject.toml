@@ -39,6 +39,9 @@ packages = ["solar_opt"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "e2e: End-to-end integration tests with full simulation execution",
+]
 
 [tool.ruff]
 line-length = 100

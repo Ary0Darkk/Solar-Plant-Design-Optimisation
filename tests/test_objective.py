@@ -3,6 +3,7 @@ Tests for economic objective calculation and smart standby logic.
 """
 
 import numpy as np
+import pytest
 
 from solar_opt.objective import ObjectiveResult, compute_daily_objective_value
 from solar_opt.simulation import DailySimulationSlice
@@ -26,10 +27,10 @@ def test_compute_daily_objective_value_standard():
     assert len(res) == 4
 
     net_profit, gross_rev, par_cost, loss_cost = res
-    assert gross_rev == 24 * 1.0 * 4000.0  # 96,000 INR
-    assert par_cost == 24 * 0.1 * 4000.0  # 9,600 INR
-    assert loss_cost == 24 * (0.4 * 0.2) * 4000.0  # 7,680 INR
-    assert net_profit == gross_rev - par_cost - loss_cost
+    assert gross_rev == pytest.approx(24 * 1.0 * 4000.0)  # 96,000 INR
+    assert par_cost == pytest.approx(24 * 0.1 * 4000.0)  # 9,600 INR
+    assert loss_cost == pytest.approx(24 * (0.4 * 0.2) * 4000.0)  # 7,680 INR
+    assert net_profit == pytest.approx(gross_rev - par_cost - loss_cost)
 
 
 def test_smart_no_dispatch_logic():
