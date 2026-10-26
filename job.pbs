@@ -1,13 +1,14 @@
 #!/bin/bash
 #PBS -N CSP_GA_Opt
-#PBS -l select=1:ncpus=112:mpiprocs=1
+#PBS -l select=4:ncpus=112:mpiprocs=1
+#PBS -l place=scatter
 #PBS -l walltime=24:00:00
 #PBS -q standard
 #PBS -j oe
 #PBS -o logs/pbs_${PBS_JOBID}.log
 
 # ==============================================================================
-# Unified HPC PBS Batch Script for CSP Seasonal GA Optimization
+# Multi-Node HPC Hybrid MPI + Multiprocessing PBS Script
 # ==============================================================================
 
 cd "$PBS_O_WORKDIR" || exit 1
@@ -29,23 +30,16 @@ if [ -f ".env" ]; then
 fi
 
 SEASON=${SEASON:-summer}
-WORKERS=${PBS_NCPUS:-112}
+export LOCAL_WORKERS=${LOCAL_WORKERS:-112}
 
 echo "=========================================================="
 echo "Job ID:    $PBS_JOBID"
-echo "Host:      $(hostname)"
-echo "CPUs:      $WORKERS"
+echo "Nodes:     $(wc -l < "$PBS_NODEFILE")"
+echo "Workers:   $LOCAL_WORKERS per node"
 echo "Season:    $SEASON"
 echo "Start:     $(date)"
 echo "=========================================================="
 
-if [ "$SEASON" = "all" ]; then
-    for s in winter summer monsoon post; do
-        echo ">>> Launching GA optimization for season: $s"
-        python main.py --season "$s" --workers "$WORKERS" --job-id "$PBS_JOBID"
-    done
-else
-    python main.py --season "$SEASON" --workers "$WORKERS" --job-id "$PBS_JOBID"
-fi
+mpirun python main.py --season "$SEASON"
 
 echo "Job finished at: $(date)"

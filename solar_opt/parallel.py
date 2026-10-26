@@ -2,7 +2,7 @@
 MPI Communication Wrapper and Multiprocessing Partitioning.
 """
 
-from typing import Any, List, Optional
+from typing import Any, List
 
 
 class StandaloneCommunicator:
@@ -14,18 +14,11 @@ class StandaloneCommunicator:
     def Get_size(self) -> int:
         return 1
 
-    def Barrier(self) -> None:
+
+    def send(self, obj: Any, dest: int = 0, tag: int = 0) -> None:
         pass
 
-    def bcast(self, obj: Any, root: int = 0) -> Any:
-        return obj
-
-    def gather(self, obj: Any, root: int = 0) -> List[Any]:
-        return [obj]
-
-    def scatter(self, obj_list: Optional[List[Any]], root: int = 0) -> Any:
-        if obj_list is not None and len(obj_list) > 0:
-            return obj_list[0]
+    def recv(self, source: int = 0, tag: int = 0) -> Any:
         return None
 
 
@@ -34,9 +27,7 @@ def get_communicator() -> Any:
     try:
         from mpi4py import MPI
 
-        comm = MPI.COMM_WORLD
-        if comm.Get_size() > 1:
-            return comm
+        return MPI.COMM_WORLD
     except Exception:
         pass
 

@@ -2,9 +2,11 @@
 Core Genetic Algorithm Optimization Engine with True Elitism & Checkpointing.
 """
 
+import logging
 import multiprocessing as mp
 import os
 import random
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -72,12 +74,123 @@ def _eval_worker(
     return evaluate_individual_season(ind, season, config, sim, tariff, season_days)
 
 
+def _eval_worker_indexed(
+    args: Tuple[int, List[float], str, Any, Any, List[Dict[str, int]]],
+) -> Tuple[int, float, bool]:
+    """Worker task returning (index, fitness, is_successful) to preserve ordering in async streams."""
+    idx, ind, season, config, tariff, season_days = args
+    sim = get_simulator(config.simulation)
+    profit, succ = evaluate_individual_season(ind, season, config, sim, tariff, season_days)
+    return idx, profit, succ
+
+
+def _evaluate_population_parallel(
+    candidates: List[Any],
+    season: str,
+    cfg: PipelineConfig,
+    tariff: np.ndarray,
+    season_days: List[Dict[str, int]],
+    pool: Any,
+    comm: Optional[Any] = None,
+    logger: Optional[Any] = None,
+    gen: int = 0,
+) -> Tuple[List[Tuple[float, bool]], int, int]:
+    """Evaluate candidate individuals across local multiprocessing pool or distributed MPI cluster."""
+    if not candidates:
+        return [], 0, 0
+
+    size = comm.Get_size() if comm is not None else 1
+    total = len(candidates)
+    log_interval = 1 if total <= 10 else max(2, total // 10)
+
+    if size <= 1:
+        indexed_args = [
+            (idx, list(ind), season, cfg, tariff, season_days) for idx, ind in enumerate(candidates)
+        ]
+        results_ordered: List[Optional[Tuple[float, bool]]] = [None] * total
+        succ_count = 0
+        pen_count = 0
+
+        if logger:
+            worker_count = getattr(pool, "_processes", "pool")
+            logger.info(
+                f"[Gen {gen:3d}] Evaluating {total} candidates across {worker_count} local worker processes..."
+            )
+
+        start_time = time.time()
+        for completed, (idx, profit, succ) in enumerate(
+            pool.imap_unordered(_eval_worker_indexed, indexed_args), 1
+        ):
+            results_ordered[idx] = (profit, succ)
+            if succ:
+                succ_count += 1
+            else:
+                pen_count += 1
+
+            if logger and (completed == 1 or completed % log_interval == 0 or completed == total):
+                elapsed = time.time() - start_time
+                rate = completed / elapsed if elapsed > 0 else 0
+                eta = (total - completed) / rate if rate > 0 else 0
+                logger.info(
+                    f"[Gen {gen:3d}] Progress: {completed}/{total} ({completed / total * 100:.1f}%) | "
+                    f"Valid: {succ_count}/{completed} | Speed: {rate:.2f} ind/s | ETA: {eta:.0f}s"
+                )
+
+        return results_ordered, succ_count, pen_count
+
+    # Multi-node MPI distribution
+    from .parallel import partition_batches
+
+    batches = partition_batches(candidates, size)
+
+    # Dispatch sub-batches of plain gene lists to remote MPI worker ranks (1 .. size-1)
+    for worker_rank in range(1, size):
+        gene_batch = [list(ind) for ind in batches[worker_rank]]
+        comm.send(gene_batch, dest=worker_rank, tag=1)
+
+    # Master node (Rank 0) evaluates its assigned sub-batch locally with live progress
+    master_batch = batches[0]
+    master_indexed = [
+        (idx, list(ind), season, cfg, tariff, season_days) for idx, ind in enumerate(master_batch)
+    ]
+    master_results: List[Optional[Tuple[float, bool]]] = [None] * len(master_batch)
+
+    if logger:
+        logger.info(
+            f"[Gen {gen:3d}] Master Rank 0 evaluating {len(master_batch)} candidates locally..."
+        )
+
+    for idx, profit, succ in pool.imap_unordered(_eval_worker_indexed, master_indexed):
+        master_results[idx] = (profit, succ)
+
+    all_results = list(master_results)
+
+    # Collect evaluated results in deterministic rank order from remote workers
+    for worker_rank in range(1, size):
+        if logger:
+            logger.info(
+                f"[Gen {gen:3d}] Awaiting results from Worker Rank {worker_rank}/{size - 1}..."
+            )
+        worker_results = comm.recv(source=worker_rank, tag=2)
+        all_results.extend(worker_results)
+        if logger:
+            logger.info(
+                f"[Gen {gen:3d}] Received {len(worker_results)} evaluations from Worker Rank {worker_rank}"
+            )
+
+    succ = sum(1 for _, s in all_results if s)
+    pen = len(all_results) - succ
+    return all_results, succ, pen
+
+
 def run_optimization(
     season: str,
     config: Optional[PipelineConfig] = None,
     workers: int = 4,
     comm: Optional[Any] = None,
     checkpoint_dir: Optional[Path] = None,
+    custom_logger: Optional[logging.Logger] = None,
+    timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Execute season-wise Genetic Algorithm optimization loop with Hall of Fame elitism.
@@ -89,8 +202,8 @@ def run_optimization(
     random.seed(cfg.ga.random_seed)
     np.random.seed(cfg.ga.random_seed)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    logger = setup_logger(rank=0, timestamp=timestamp)
+    ts_str = timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    logger = custom_logger or setup_logger(rank=0, timestamp=ts_str)
     logger.info(f"Starting CSP GA Optimization | Season: {season.upper()} | Workers: {workers}")
 
     season_days = get_season_days(season, cfg.seasons)
@@ -131,7 +244,7 @@ def run_optimization(
     cum_success = 0
     cum_penalized = 0
 
-    job_id = os.environ.get("PBS_JOBID") or os.environ.get("SLURM_JOB_ID") or "local"
+    job_id = os.environ.get("PBS_JOBID", "local")
     cfg_sig = compute_config_signature(cfg)
 
     # Multiprocessing Pool
@@ -143,17 +256,12 @@ def run_optimization(
 
     try:
         # Generation 0 Evaluation
-        eval_args = [(list(ind), season, cfg, tariff, season_days) for ind in pop]
-        results = pool.map(_eval_worker, eval_args)
+        results, gen_success, gen_penalized = _evaluate_population_parallel(
+            pop, season, cfg, tariff, season_days, pool, comm, logger=logger, gen=0
+        )
 
-        gen_success = 0
-        gen_penalized = 0
-        for ind, (fit, succ) in zip(pop, results):
+        for ind, (fit, _) in zip(pop, results):
             ind.fitness.values = (fit,)
-            if succ:
-                gen_success += 1
-            else:
-                gen_penalized += 1
 
         cum_success += gen_success
         cum_penalized += gen_penalized
@@ -162,7 +270,7 @@ def run_optimization(
         record = stats.compile(pop)
         logbook.record(gen=0, nevals=len(pop), **record)
         logger.info(
-            f"Gen 0 | Max: ₹{record['max']:,.2f} | Avg: ₹{record['avg']:,.2f} | Succ: {gen_success}/{len(pop)}"
+            f"Gen 0 | Max: INR {record['max']:,.2f} | Avg: INR {record['avg']:,.2f} | Succ: {gen_success}/{len(pop)}"
         )
 
         gens_history.append(0)
@@ -205,17 +313,21 @@ def run_optimization(
             # Evaluate invalid individuals
             invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
             if invalid_ind:
-                eval_args = [(list(ind), season, cfg, tariff, season_days) for ind in invalid_ind]
-                results = pool.map(_eval_worker, eval_args)
+                results, gen_success, gen_penalized = _evaluate_population_parallel(
+                    invalid_ind,
+                    season,
+                    cfg,
+                    tariff,
+                    season_days,
+                    pool,
+                    comm,
+                    logger=logger,
+                    gen=gen,
+                )
 
-                gen_success = 0
-                gen_penalized = 0
-                for ind, (fit, succ) in zip(invalid_ind, results):
+                for ind, (fit, _) in zip(invalid_ind, results):
                     ind.fitness.values = (fit,)
-                    if succ:
-                        gen_success += 1
-                    else:
-                        gen_penalized += 1
+
                 cum_success += gen_success
                 cum_penalized += gen_penalized
 
@@ -233,7 +345,7 @@ def run_optimization(
 
             if gen % 10 == 0 or gen == cfg.ga.num_generations:
                 logger.info(
-                    f"Gen {gen:3d}/{cfg.ga.num_generations} | Max: ₹{record['max']:,.2f} | Avg: ₹{record['avg']:,.2f} | Valid: {gen_success}"
+                    f"Gen {gen:3d}/{cfg.ga.num_generations} | Max: INR {record['max']:,.2f} | Avg: INR {record['avg']:,.2f} | Valid: {gen_success}"
                 )
 
             log_step_metrics(
@@ -265,18 +377,22 @@ def run_optimization(
     finally:
         pool.close()
         pool.join()
+        # Gracefully signal all remote MPI worker ranks to terminate
+        if comm is not None and comm.Get_size() > 1:
+            for worker_rank in range(1, comm.Get_size()):
+                comm.send(None, dest=worker_rank, tag=1)
 
     best_individual = list(hof[0])
     best_fitness = float(hof[0].fitness.values[0])
 
     logger.info(
-        f"Optimization Completed | Best Fitness: ₹{best_fitness:,.2f} | Total Successful Sims: {cum_success}"
+        f"Optimization Completed | Best Fitness: INR {best_fitness:,.2f} | Total Successful Sims: {cum_success}"
     )
 
     # Export Artifacts (Plots, Excel, Report, JSON)
     artifacts = plot_and_export(
         season=season,
-        timestamp=timestamp,
+        timestamp=ts_str,
         best_ind=best_individual,
         best_fitness=best_fitness,
         design_names=cfg.design.names,
@@ -292,8 +408,49 @@ def run_optimization(
     return artifacts
 
 
-def worker_event_loop(comm: Any) -> None:
-    """Event loop for MPI worker ranks (non-zero ranks)."""
-    if comm.Get_rank() == 0:
+def worker_event_loop(
+    comm: Any,
+    season: str = "summer",
+    config: Optional[PipelineConfig] = None,
+    workers: int = 4,
+) -> None:
+    """
+    Event loop for MPI worker ranks on multi-node HPC clusters.
+    Awaits chromosome batches from Master Rank 0, evaluates them using local cores,
+    and transmits evaluated results back to Rank 0.
+    """
+    if comm is None or comm.Get_rank() == 0:
         raise RuntimeError("worker_event_loop must only be executed by rank > 0")
-    comm.Barrier()
+
+    cfg = config or PipelineConfig()
+    season_days = get_season_days(season, cfg.seasons)
+    tariff = get_shared_tariff(cfg.tariff)
+
+    ctx = mp.get_context("spawn") if os.name == "nt" else mp.get_context("fork")
+    pool = ctx.Pool(
+        processes=workers,
+        maxtasksperchild=cfg.ga.max_tasks_per_child,
+    )
+
+    try:
+        while True:
+            batch = comm.recv(source=0, tag=1)
+            if batch is None:
+                # Received termination sentinel from Master Rank 0
+                break
+
+            if batch:
+                indexed_args = [
+                    (idx, list(ind), season, cfg, tariff, season_days)
+                    for idx, ind in enumerate(batch)
+                ]
+                results_ordered: List[Optional[Tuple[float, bool]]] = [None] * len(batch)
+                for idx, profit, succ in pool.imap_unordered(_eval_worker_indexed, indexed_args):
+                    results_ordered[idx] = (profit, succ)
+            else:
+                results_ordered = []
+
+            comm.send(results_ordered, dest=0, tag=2)
+    finally:
+        pool.close()
+        pool.join()

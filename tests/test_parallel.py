@@ -15,9 +15,8 @@ def test_standalone_comm():
     comm = StandaloneCommunicator()
     assert comm.Get_rank() == 0
     assert comm.Get_size() == 1
-    assert comm.bcast("test") == "test"
-    assert comm.gather("val") == ["val"]
-    assert comm.scatter(["item1", "item2"]) == "item1"
+    assert comm.send("data") is None
+    assert comm.recv() is None
 
 
 def test_get_communicator():
