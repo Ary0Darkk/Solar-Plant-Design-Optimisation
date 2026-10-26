@@ -2,6 +2,7 @@
 Dataclass configuration models and YAML configuration loader.
 """
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -258,6 +259,18 @@ def load_pipeline_config(config_path: Optional[str] = None) -> PipelineConfig:
             cfg.bounds.design = {k: tuple(v) for k, v in data["bounds"]["design"].items()}
         if "operational" in data["bounds"]:
             cfg.bounds.operational = {k: tuple(v) for k, v in data["bounds"]["operational"].items()}
+
+    # Environment variable overrides (useful for CI, testing, and micro-runs)
+    if "GA_NUM_GENERATIONS" in os.environ:
+        try:
+            cfg.ga.num_generations = int(os.environ["GA_NUM_GENERATIONS"])
+        except ValueError:
+            pass
+    if "GA_POP_SIZE" in os.environ:
+        try:
+            cfg.ga.pop_size = int(os.environ["GA_POP_SIZE"])
+        except ValueError:
+            pass
 
     return cfg
 

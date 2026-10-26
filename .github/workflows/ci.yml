@@ -6,6 +6,28 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      season:
+        description: "Season to optimize"
+        required: true
+        default: "winter"
+        type: choice
+        options:
+          - winter
+          - summer
+          - monsoon
+          - post
+          - all
+      generations:
+        description: "Number of GA generations"
+        required: true
+        default: "2"
+        type: string
+      pop_size:
+        description: "Population size"
+        required: true
+        default: "4"
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,7 +35,7 @@ concurrency:
 
 jobs:
   lint:
-    name: Lint & Formatting
+    name: Lint & Code Style
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -68,10 +90,9 @@ jobs:
       - name: Run Pytest (Unit Tests)
         run: uv run pytest -m "not e2e" -v
 
-  e2e-test:
-    name: E2E Integration Test
+  run-app-e2e:
+    name: Run Application End-to-End
     runs-on: ubuntu-latest
-    needs: unit-tests
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -95,5 +116,35 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Run Pytest (E2E Micro GA Simulation)
-        run: uv run pytest tests/test_e2e.py -v
+      - name: Run Full Pipeline (main.py)
+        env:
+          GA_NUM_GENERATIONS: ${{ inputs.generations || '2' }}
+          GA_POP_SIZE: ${{ inputs.pop_size || '4' }}
+          LOCAL_WORKERS: "2"
+          MLFLOW_TRACKING_URI: "sqlite:///mlflow.db"
+        run: |
+          echo ">>> Executing CSP GA Optimization End-to-End"
+          uv run python main.py --season ${{ inputs.season || 'winter' }}
+
+      - name: Verify Generated Artifacts
+        run: |
+          echo ">>> Verifying generated plots and results"
+          ls -la plots/GA_plots/
+          ls -la results/GA_results/
+          test -n "$(ls plots/GA_plots/*.png 2>/dev/null)" || { echo "Error: No PNG plot generated"; exit 1; }
+          test -n "$(ls plots/GA_plots/*.pdf 2>/dev/null)" || { echo "Error: No PDF plot generated"; exit 1; }
+          test -n "$(ls results/GA_results/*.xlsx 2>/dev/null)" || { echo "Error: No Excel workbook generated"; exit 1; }
+          test -n "$(ls results/GA_results/*.md 2>/dev/null)" || { echo "Error: No Markdown executive report generated"; exit 1; }
+          test -n "$(ls results/GA_results/*.json 2>/dev/null)" || { echo "Error: No JSON summary generated"; exit 1; }
+          echo "All expected application artifacts verified successfully!"
+
+      - name: Upload Optimization Results & Plots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: csp-optimization-artifacts-${{ inputs.season || 'winter' }}
+          path: |
+            plots/GA_plots/
+            results/GA_results/
+            logs/
+          retention-days: 7

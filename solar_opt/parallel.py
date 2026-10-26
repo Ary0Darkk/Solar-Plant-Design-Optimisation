@@ -14,7 +14,6 @@ class StandaloneCommunicator:
     def Get_size(self) -> int:
         return 1
 
-
     def send(self, obj: Any, dest: int = 0, tag: int = 0) -> None:
         pass
 

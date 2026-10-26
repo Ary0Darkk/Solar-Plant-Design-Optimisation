@@ -1,7 +1,5 @@
 # Concentrated Solar Power (CSP) Plant Design & Operation Optimizer
 
-[![CI](https://github.com/Ary0Darkk/Solar-Plant-Design-Optimisation/actions/workflows/ci.yml/badge.svg)](https://github.com/Ary0Darkk/Solar-Plant-Design-Optimisation/actions/workflows/ci.yml)
-
 A high-performance Genetic Algorithm (GA) optimization framework for Concentrated Solar Power (CSP) parabolic trough plants using PySAM and DEAP. Jointly optimizes physical solar field design parameters alongside dynamic daily operational control strategies across representative seasonal weather conditions.
 
 ## Key Features
