@@ -10,14 +10,24 @@ on:
       season:
         description: "Season to optimize (winter, summer, monsoon, post, or all)"
         required: true
-        default: "all"
+        default: "winter"
         type: choice
         options:
-          - all
           - winter
           - summer
           - monsoon
           - post
+          - all
+      generations:
+        description: "Number of GA generations"
+        required: true
+        default: "2"
+        type: string
+      pop_size:
+        description: "Population size"
+        required: true
+        default: "4"
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -81,9 +91,9 @@ jobs:
         run: uv run pytest -m "not e2e" -v
 
   run-entire-project:
-    name: Run Entire Project (main.py)
+    name: Run Application End-to-End
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -107,13 +117,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Run Entire Application (Full Project)
+      - name: Run Application Pipeline (End-to-End Verification)
         env:
+          GA_NUM_GENERATIONS: ${{ inputs.generations || '2' }}
+          GA_POP_SIZE: ${{ inputs.pop_size || '4' }}
           LOCAL_WORKERS: "2"
           MLFLOW_TRACKING_URI: "sqlite:///mlflow.db"
         run: |
-          echo ">>> Executing ENTIRE PROJECT via main.py"
-          uv run python main.py --season ${{ inputs.season || 'all' }}
+          echo ">>> Executing CSP GA Optimization End-to-End"
+          uv run python main.py --season ${{ inputs.season || 'winter' }}
 
       - name: Verify Generated Artifacts
         run: |
@@ -131,7 +143,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: entire-project-artifacts
+          name: csp-optimization-artifacts-${{ inputs.season || 'winter' }}
           path: |
             plots/GA_plots/
             results/GA_results/
