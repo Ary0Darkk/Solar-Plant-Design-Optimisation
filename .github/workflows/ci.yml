@@ -139,7 +139,7 @@ jobs:
           test -n "$(ls results/GA_results/*.json 2>/dev/null)" || { echo "Error: No JSON summary generated"; exit 1; }
           echo "All expected application artifacts verified successfully!"
 
-      - name: Upload Optimization Results & Plots
+      - name: Upload Optimization Results, Plots & MLflow Database
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -148,4 +148,7 @@ jobs:
             plots/GA_plots/
             results/GA_results/
             logs/
+            mlflow.db
+            mlruns/
+          if-no-files-found: ignore
           retention-days: 14
