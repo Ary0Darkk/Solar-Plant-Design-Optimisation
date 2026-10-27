@@ -6,28 +6,6 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
-    inputs:
-      season:
-        description: "Season to optimize (winter, summer, monsoon, post, or all)"
-        required: true
-        default: "all"
-        type: choice
-        options:
-          - all
-          - winter
-          - summer
-          - monsoon
-          - post
-      generations:
-        description: "Number of GA generations"
-        required: true
-        default: "5"
-        type: string
-      pop_size:
-        description: "Population size"
-        required: false
-        default: "112"
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -89,66 +67,3 @@ jobs:
 
       - name: Run Pytest (Unit Tests)
         run: uv run pytest -m "not e2e" -v
-
-  run-complete-ga:
-    name: Run Complete GA Optimization (main.py)
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install OpenMPI Runtime & Headers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenmpi-dev openmpi-bin
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          version: "latest"
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: uv sync --all-groups
-
-      - name: Run Complete GA Optimization Pipeline
-        env:
-          GA_NUM_GENERATIONS: ${{ inputs.generations || '5' }}
-          GA_POP_SIZE: ${{ inputs.pop_size || '112' }}
-          LOCAL_WORKERS: "2"
-          MLFLOW_TRACKING_URI: "sqlite:///mlflow.db"
-        run: |
-          echo ">>> Executing Complete GA Optimization Pipeline (${GA_NUM_GENERATIONS} generations, pop size ${GA_POP_SIZE})"
-          uv run python main.py --season ${{ inputs.season || 'all' }}
-
-      - name: Verify Generated Artifacts
-        run: |
-          echo ">>> Verifying generated plots and results"
-          ls -la plots/GA_plots/
-          ls -la results/GA_results/
-          test -n "$(ls plots/GA_plots/*.png 2>/dev/null)" || { echo "Error: No PNG plot generated"; exit 1; }
-          test -n "$(ls plots/GA_plots/*.pdf 2>/dev/null)" || { echo "Error: No PDF plot generated"; exit 1; }
-          test -n "$(ls results/GA_results/*.xlsx 2>/dev/null)" || { echo "Error: No Excel workbook generated"; exit 1; }
-          test -n "$(ls results/GA_results/*.md 2>/dev/null)" || { echo "Error: No Markdown executive report generated"; exit 1; }
-          test -n "$(ls results/GA_results/*.json 2>/dev/null)" || { echo "Error: No JSON summary generated"; exit 1; }
-          echo "All expected application artifacts verified successfully!"
-
-      - name: Upload Optimization Results, Plots & MLflow Database
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: complete-ga-artifacts-${{ inputs.season || 'all' }}
-          path: |
-            plots/GA_plots/
-            results/GA_results/
-            logs/
-            mlflow.db
-            mlruns/
-          if-no-files-found: ignore
-          retention-days: 14
