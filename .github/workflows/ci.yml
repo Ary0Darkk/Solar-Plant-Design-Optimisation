@@ -10,23 +10,23 @@ on:
       season:
         description: "Season to optimize (winter, summer, monsoon, post, or all)"
         required: true
-        default: "winter"
+        default: "all"
         type: choice
         options:
+          - all
           - winter
           - summer
           - monsoon
           - post
-          - all
       generations:
         description: "Number of GA generations"
         required: true
-        default: "2"
+        default: "10"
         type: string
       pop_size:
         description: "Population size"
-        required: true
-        default: "4"
+        required: false
+        default: "112"
         type: string
 
 concurrency:
@@ -90,10 +90,10 @@ jobs:
       - name: Run Pytest (Unit Tests)
         run: uv run pytest -m "not e2e" -v
 
-  run-entire-project:
-    name: Run Application End-to-End
+  run-complete-ga:
+    name: Run Complete GA Optimization (main.py)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 360
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -117,15 +117,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Run Application Pipeline (End-to-End Verification)
+      - name: Run Complete GA Optimization Pipeline
         env:
-          GA_NUM_GENERATIONS: ${{ inputs.generations || '2' }}
-          GA_POP_SIZE: ${{ inputs.pop_size || '4' }}
+          GA_NUM_GENERATIONS: ${{ inputs.generations || '10' }}
+          GA_POP_SIZE: ${{ inputs.pop_size || '112' }}
           LOCAL_WORKERS: "2"
           MLFLOW_TRACKING_URI: "sqlite:///mlflow.db"
         run: |
-          echo ">>> Executing CSP GA Optimization End-to-End"
-          uv run python main.py --season ${{ inputs.season || 'winter' }}
+          echo ">>> Executing Complete GA Optimization Pipeline (${GA_NUM_GENERATIONS} generations, pop size ${GA_POP_SIZE})"
+          uv run python main.py --season ${{ inputs.season || 'all' }}
 
       - name: Verify Generated Artifacts
         run: |
@@ -143,7 +143,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: csp-optimization-artifacts-${{ inputs.season || 'winter' }}
+          name: complete-ga-artifacts-${{ inputs.season || 'all' }}
           path: |
             plots/GA_plots/
             results/GA_results/
