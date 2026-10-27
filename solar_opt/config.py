@@ -1,5 +1,6 @@
 """
-Dataclass configuration models and YAML configuration loader.
+Dataclass configuration models, YAML serialization, and environment overrides.
+Provides strongly typed access to simulation, GA, bounds, tariff, and tracking parameters.
 """
 
 import os
@@ -12,7 +13,7 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-@dataclass
+@dataclass(frozen=True)
 class VariableBounds:
     """Strongly typed container for optimization decision variable bounds."""
 
@@ -21,15 +22,29 @@ class VariableBounds:
     ub: Tuple[float, ...]
     types: Tuple[type, ...]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         n = len(self.names)
         if len(self.lb) != n or len(self.ub) != n or len(self.types) != n:
             raise ValueError(
-                f"Dimension mismatch in VariableBounds: names={n}, lb={len(self.lb)}, ub={len(self.ub)}, types={len(self.types)}"
+                f"Dimension mismatch in VariableBounds: names={n}, lb={len(self.lb)}, "
+                f"ub={len(self.ub)}, types={len(self.types)}"
             )
 
+    @property
+    def dimension(self) -> int:
+        """Total number of decision variables."""
+        return len(self.names)
+
+    def __len__(self) -> int:
+        return self.dimension
+
     def to_bounds_list(self) -> List[Tuple[float, float]]:
+        """Return list of (lower_bound, upper_bound) tuples for optimization operators."""
         return list(zip(self.lb, self.ub))
+
+    def to_dict(self) -> Dict[str, Tuple[float, float]]:
+        """Return mapping of variable name to (lower_bound, upper_bound)."""
+        return dict(zip(self.names, self.to_bounds_list()))
 
 
 @dataclass
@@ -49,13 +64,25 @@ class SimulationConfig:
     worker_recycle_rate: int = 25
     penalty: float = -1e6
 
+    @property
+    def resolved_weather_path(self) -> Path:
+        """Resolve weather file path relative to project root if not absolute."""
+        p = Path(self.weather_file)
+        return p if p.is_absolute() else PROJECT_ROOT / p
+
+    @property
+    def resolved_plant_config_path(self) -> Path:
+        """Resolve plant config JSON path relative to project root if not absolute."""
+        p = Path(self.plant_config_file)
+        return p if p.is_absolute() else PROJECT_ROOT / p
+
 
 @dataclass
 class TariffConfig:
     source_file: str = "electricity_data/dynamic_price_data_haryana.csv"
     demand_file: str = "electricity_data/Yearly Demand Profile Haryana-Himanchal.xlsx"
-    min_price: float = 3.0
-    max_price: float = 8.0
+    min_price: float = 3.0  # INR/kWh
+    max_price: float = 8.0  # INR/kWh
 
 
 @dataclass
@@ -135,6 +162,21 @@ class PipelineConfig:
         types = tuple(float for _ in names)
         return VariableBounds(names=names, lb=lb, ub=ub, types=types)
 
+    def validate(self) -> None:
+        """Validate logical configuration invariants."""
+        if self.ga.pop_size <= 0:
+            raise ValueError(f"pop_size must be positive, got {self.ga.pop_size}")
+        if self.ga.num_generations <= 0:
+            raise ValueError(f"num_generations must be positive, got {self.ga.num_generations}")
+        if not (0.0 <= self.ga.cxpb <= 1.0):
+            raise ValueError(f"cxpb must be between 0 and 1, got {self.ga.cxpb}")
+        if not (0.0 <= self.ga.mutpb <= 1.0):
+            raise ValueError(f"mutpb must be between 0 and 1, got {self.ga.mutpb}")
+        if self.tariff.min_price > self.tariff.max_price:
+            raise ValueError(
+                f"min_price ({self.tariff.min_price}) cannot exceed max_price ({self.tariff.max_price})"
+            )
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to flat dictionary for backward compatibility."""
         return {
@@ -170,6 +212,7 @@ def save_pipeline_config_to_yaml(config: PipelineConfig, filepath: Union[str, Pa
             "plant_config_file": config.simulation.plant_config_file,
             "max_simulation_workers": config.simulation.max_simulation_workers,
             "worker_recycle_rate": config.simulation.worker_recycle_rate,
+            "penalty": config.simulation.penalty,
         },
         "tariff": {
             "source_file": config.tariff.source_file,
@@ -178,6 +221,10 @@ def save_pipeline_config_to_yaml(config: PipelineConfig, filepath: Union[str, Pa
             "max_price": config.tariff.max_price,
         },
         "seasons": config.seasons,
+        "bounds": {
+            "design": {k: list(v) for k, v in config.bounds.design.items()},
+            "operational": {k: list(v) for k, v in config.bounds.operational.items()},
+        },
         "ga": {
             "num_generations": config.ga.num_generations,
             "pop_size": config.ga.pop_size,
@@ -188,6 +235,7 @@ def save_pipeline_config_to_yaml(config: PipelineConfig, filepath: Union[str, Pa
             "tournament_size": config.ga.tournament_size,
             "elitism_count": config.ga.elitism_count,
             "max_tasks_per_child": config.ga.max_tasks_per_child,
+            "random_seed": config.ga.random_seed,
         },
         "tracking": {
             "enabled": config.tracking.enabled,
@@ -205,7 +253,7 @@ def save_pipeline_config_to_yaml(config: PipelineConfig, filepath: Union[str, Pa
     return filepath
 
 
-def load_pipeline_config(config_path: Optional[str] = None) -> PipelineConfig:
+def load_pipeline_config(config_path: Optional[Union[str, Path]] = None) -> PipelineConfig:
     """Load and validate pipeline configuration from YAML file or defaults."""
     path = Path(config_path) if config_path else PROJECT_ROOT / "config.yaml"
     if not path.exists():
@@ -218,17 +266,17 @@ def load_pipeline_config(config_path: Optional[str] = None) -> PipelineConfig:
 
     cfg = PipelineConfig()
 
-    if "system" in data:
+    if "system" in data and isinstance(data["system"], dict):
         cfg.system = SystemConfig(
             **{k: v for k, v in data["system"].items() if hasattr(cfg.system, k)}
         )
 
-    if "simulation" in data:
+    if "simulation" in data and isinstance(data["simulation"], dict):
         cfg.simulation = SimulationConfig(
             **{k: v for k, v in data["simulation"].items() if hasattr(cfg.simulation, k)}
         )
 
-    if "tariff" in data:
+    if "tariff" in data and isinstance(data["tariff"], dict):
         cfg.tariff = TariffConfig(
             **{k: v for k, v in data["tariff"].items() if hasattr(cfg.tariff, k)}
         )
@@ -236,7 +284,7 @@ def load_pipeline_config(config_path: Optional[str] = None) -> PipelineConfig:
     if "seasons" in data and isinstance(data["seasons"], dict):
         cfg.seasons = data["seasons"]
 
-    if "ga" in data:
+    if "ga" in data and isinstance(data["ga"], dict):
         ga_dict = data["ga"]
         mapping = {
             "crossover_prob": "cxpb",
@@ -249,18 +297,18 @@ def load_pipeline_config(config_path: Optional[str] = None) -> PipelineConfig:
                 clean_ga[target_key] = v
         cfg.ga = GAConfig(**clean_ga)
 
-    if "tracking" in data:
+    if "tracking" in data and isinstance(data["tracking"], dict):
         cfg.tracking = TrackingConfig(
             **{k: v for k, v in data["tracking"].items() if hasattr(cfg.tracking, k)}
         )
 
-    if "bounds" in data:
-        if "design" in data["bounds"]:
+    if "bounds" in data and isinstance(data["bounds"], dict):
+        if "design" in data["bounds"] and isinstance(data["bounds"]["design"], dict):
             cfg.bounds.design = {k: tuple(v) for k, v in data["bounds"]["design"].items()}
-        if "operational" in data["bounds"]:
+        if "operational" in data["bounds"] and isinstance(data["bounds"]["operational"], dict):
             cfg.bounds.operational = {k: tuple(v) for k, v in data["bounds"]["operational"].items()}
 
-    # Environment variable overrides (useful for CI, testing, and micro-runs)
+    # Environment variable overrides (useful for HPC, scripts, micro-runs)
     if "GA_NUM_GENERATIONS" in os.environ:
         try:
             cfg.ga.num_generations = int(os.environ["GA_NUM_GENERATIONS"])
@@ -271,10 +319,17 @@ def load_pipeline_config(config_path: Optional[str] = None) -> PipelineConfig:
             cfg.ga.pop_size = int(os.environ["GA_POP_SIZE"])
         except ValueError:
             pass
+    if "SEED" in os.environ:
+        try:
+            seed_val = int(os.environ["SEED"])
+            cfg.system.seed = seed_val
+            cfg.ga.random_seed = seed_val
+        except ValueError:
+            pass
 
     return cfg
 
 
-def get_pipeline_config(config_path: Optional[str] = None) -> PipelineConfig:
+def get_pipeline_config(config_path: Optional[Union[str, Path]] = None) -> PipelineConfig:
     """Convenience getter for PipelineConfig."""
     return load_pipeline_config(config_path)

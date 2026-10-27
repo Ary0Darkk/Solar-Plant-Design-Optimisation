@@ -51,6 +51,7 @@ def test_yaml_config_save_and_load(tmp_path: Path):
     assert loaded_cfg.ga.pop_size == 50
     assert loaded_cfg.ga.num_generations == 10
     assert loaded_cfg.tariff.min_price == 4.0
+    assert loaded_cfg.bounds.design["specified_total_aperture"] == (8000.0, 12000.0)
 
 
 def test_legacy_dict_conversion():
@@ -63,3 +64,23 @@ def test_legacy_dict_conversion():
 def test_missing_config_file_raises():
     with pytest.raises(FileNotFoundError):
         load_pipeline_config("non_existent_file_path.yaml")
+
+
+def test_config_validation_and_bounds_helpers():
+    cfg = PipelineConfig()
+    cfg.validate()
+
+    assert cfg.design.dimension == 5
+    assert len(cfg.design) == 5
+    assert "Row_Distance" in cfg.design.to_dict()
+
+    cfg.ga.pop_size = -1
+    with pytest.raises(ValueError, match="pop_size"):
+        cfg.validate()
+
+    cfg.ga.pop_size = 112
+    cfg.tariff.min_price = 10.0
+    cfg.tariff.max_price = 5.0
+    with pytest.raises(ValueError, match="min_price"):
+        cfg.validate()
+
