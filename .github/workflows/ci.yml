@@ -21,7 +21,7 @@ on:
       generations:
         description: "Number of GA generations"
         required: true
-        default: "10"
+        default: "5"
         type: string
       pop_size:
         description: "Population size"
@@ -119,7 +119,7 @@ jobs:
 
       - name: Run Complete GA Optimization Pipeline
         env:
-          GA_NUM_GENERATIONS: ${{ inputs.generations || '10' }}
+          GA_NUM_GENERATIONS: ${{ inputs.generations || '5' }}
           GA_POP_SIZE: ${{ inputs.pop_size || '112' }}
           LOCAL_WORKERS: "2"
           MLFLOW_TRACKING_URI: "sqlite:///mlflow.db"

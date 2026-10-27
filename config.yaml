@@ -56,7 +56,7 @@ bounds:
     T_shutdown: [250.0, 300.0]                   # °C
 
 ga:
-  num_generations: 10
+  num_generations: 5
   pop_size: 112
   crossover_prob: 0.8
   mutation_prob: 0.2
