@@ -1,8 +1,5 @@
 #!/bin/bash
 #PBS -N CSP_GA_Opt
-# Set ncpus and mpiprocs to the exact same value (required by cluster scheduler):
-# For 4 nodes (448 cores total): select=4:ncpus=112:mpiprocs=112
-# For 1 node  (112 cores total): select=1:ncpus=112:mpiprocs=112
 #PBS -l select=4:ncpus=112:mpiprocs=112
 #PBS -l place=scatter
 #PBS -l walltime=24:00:00
@@ -10,24 +7,15 @@
 #PBS -j oe
 #PBS -o logs/pbs_${PBS_JOBID}.log
 
-# ==============================================================================
-# Multi-Node HPC Hybrid MPI + Multiprocessing PBS Script
-# ==============================================================================
-
 cd "$PBS_O_WORKDIR" || exit 1
 mkdir -p logs results/GA_results plots/GA_plots
 
-# Load system Python/MPI environment (customize for cluster, e.g.)
-# module load python/3.12 openmpi/4.1
-
-# Activate virtual environment
 if [ -d ".venv" ]; then
     source .venv/bin/activate
 elif [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
-# Load environment secrets if .env exists
 if [ -f ".env" ]; then
     set -a
     source .env
@@ -37,7 +25,6 @@ fi
 SEASON=${SEASON:-summer}
 export LOCAL_WORKERS=${LOCAL_WORKERS:-112}
 
-# Extract unique physical nodes (1 MPI process per node)
 HOSTS_FILE="logs/hosts_${PBS_JOBID}"
 sort -u "$PBS_NODEFILE" > "$HOSTS_FILE"
 NUM_NODES=$(wc -l < "$HOSTS_FILE")
@@ -50,7 +37,6 @@ echo "Season:    $SEASON"
 echo "Start:     $(date)"
 echo "=========================================================="
 
-# Run 1 MPI rank per node with full local multiprocessing
 if [ "$NUM_NODES" -gt 1 ]; then
     mpirun --hostfile "$HOSTS_FILE" -n "$NUM_NODES" python main.py --season "$SEASON"
 else
