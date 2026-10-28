@@ -5,7 +5,6 @@
 #PBS -l walltime=24:00:00
 #PBS -q standard
 #PBS -j oe
-#PBS -o logs/pbs_${PBS_JOBID}.log
 
 cd "$PBS_O_WORKDIR" || exit 1
 mkdir -p logs results/GA_results plots/GA_plots
